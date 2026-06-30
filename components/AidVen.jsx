@@ -1021,32 +1021,350 @@ function ResumenGlobalView() {
   );
 }
 
+// ─── MODAL: REGISTRAR/EDITAR CAJA DE EMBALAJE ─────────────────────────────────
+function ModalCaja({ onClose, onSaved, tipos, categorias, centroId, cajaExistente }) {
+  const [form, setForm] = useState({
+    tipo_id: cajaExistente?.tipo_id || "",
+    categoria_id: cajaExistente?.categoria_id || "",
+    numero_caja: cajaExistente?.numero_caja || "",
+    largo_cm: cajaExistente?.largo_cm || "",
+    ancho_cm: cajaExistente?.ancho_cm || "",
+    alto_cm: cajaExistente?.alto_cm || "",
+    peso_kg: cajaExistente?.peso_kg || "",
+    contenido_resumen: cajaExistente?.contenido_resumen || "",
+    estado: cajaExistente?.estado || "empacado",
+    fecha_empaque: cajaExistente?.fecha_empaque || new Date().toISOString().split("T")[0],
+    observaciones: cajaExistente?.observaciones || "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const catsFiltradas = categorias.filter(c=>c.tipo_id===form.tipo_id);
+
+  const volumenCalculado = () => {
+    const l=parseFloat(form.largo_cm), a=parseFloat(form.ancho_cm), h=parseFloat(form.alto_cm);
+    if (l && a && h) return ((l*a*h)/1000000).toFixed(6);
+    return null;
+  };
+
+  const handleSave = async () => {
+    if (!centroId) { setError("Tu cuenta no tiene un centro de acopio asignado."); return; }
+    if (!form.tipo_id || !form.categoria_id || !form.peso_kg) {
+      setError("Completa: Tipo, Categoría y Peso de la caja."); return;
+    }
+    setError(""); setLoading(true);
+    const payload = {
+      centro_id: centroId,
+      tipo_id: form.tipo_id,
+      categoria_id: form.categoria_id,
+      numero_caja: form.numero_caja || null,
+      largo_cm: form.largo_cm ? parseFloat(form.largo_cm) : null,
+      ancho_cm: form.ancho_cm ? parseFloat(form.ancho_cm) : null,
+      alto_cm: form.alto_cm ? parseFloat(form.alto_cm) : null,
+      peso_kg: parseFloat(form.peso_kg),
+      contenido_resumen: form.contenido_resumen || null,
+      estado: form.estado,
+      fecha_empaque: form.fecha_empaque,
+      observaciones: form.observaciones || null,
+    };
+    let err;
+    if (cajaExistente) {
+      ({ error: err } = await supabase.from("cajas_embalaje").update(payload).eq("id", cajaExistente.id));
+    } else {
+      ({ error: err } = await supabase.from("cajas_embalaje").insert(payload));
+    }
+    if (err) { setError(err.message); setLoading(false); return; }
+    onSaved();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h2>{cajaExistente ? "Editar Caja de Embalaje" : "Registrar Caja de Embalaje"}</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error mb-3">⚠️ {error}</div>}
+          <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
+            📦 Registra aquí el peso y volumen <strong>real medido</strong> de una caja física ya empacada
+            (báscula y cinta métrica), agrupando todo lo de una misma categoría.
+          </div>
+
+          <div className="section-label">Clasificación de la caja</div>
+          <div className="type-tabs mb-4">
+            {tipos.map(t=>(
+              <button key={t.id} className={`type-tab ${form.tipo_id===t.id?"active":""}`}
+                onClick={()=>{set("tipo_id",t.id);set("categoria_id","");}}>
+                <Ico name={t.icono} size={13}/> {t.nombre}
+              </button>
+            ))}
+          </div>
+
+          {form.tipo_id && (
+            <div className="form-grid mb-4">
+              <div className="field">
+                <label>Categoría <span className="req">*</span></label>
+                <select value={form.categoria_id} onChange={e=>set("categoria_id",e.target.value)}>
+                  <option value="">— Selecciona —</option>
+                  {catsFiltradas.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>Número / Etiqueta de caja</label>
+                <input value={form.numero_caja} onChange={e=>set("numero_caja",e.target.value)} placeholder="Ej: CAJA-001"/>
+              </div>
+            </div>
+          )}
+
+          <div className="section-label">Contenido</div>
+          <div className="field mb-4">
+            <label>Resumen del contenido</label>
+            <input value={form.contenido_resumen} onChange={e=>set("contenido_resumen",e.target.value)}
+              placeholder="Ej: Ibuprofeno, Paracetamol, Naproxeno (bolsas ziploc)"/>
+          </div>
+
+          <div className="section-label">Peso y Volumen Real</div>
+          <div className="form-grid-3 mb-2">
+            <div className="field">
+              <label>Largo (cm)</label>
+              <input type="number" step="0.1" min="0" value={form.largo_cm} onChange={e=>set("largo_cm",e.target.value)} placeholder="40"/>
+            </div>
+            <div className="field">
+              <label>Ancho (cm)</label>
+              <input type="number" step="0.1" min="0" value={form.ancho_cm} onChange={e=>set("ancho_cm",e.target.value)} placeholder="30"/>
+            </div>
+            <div className="field">
+              <label>Alto (cm)</label>
+              <input type="number" step="0.1" min="0" value={form.alto_cm} onChange={e=>set("alto_cm",e.target.value)} placeholder="25"/>
+            </div>
+          </div>
+          {volumenCalculado() && (
+            <div className="alert alert-info mb-3" style={{fontSize:12.5}}>
+              📐 Volumen calculado: <strong>{volumenCalculado()} m³</strong>
+            </div>
+          )}
+          <div className="field mb-4">
+            <label>Peso real en báscula (kg) <span className="req">*</span></label>
+            <input type="number" step="0.001" min="0" value={form.peso_kg} onChange={e=>set("peso_kg",e.target.value)} placeholder="Ej: 8.400"/>
+          </div>
+
+          <div className="section-label">Estado y Observaciones</div>
+          <div className="form-grid">
+            <div className="field">
+              <label>Fecha de empaque</label>
+              <input type="date" value={form.fecha_empaque} onChange={e=>set("fecha_empaque",e.target.value)}/>
+            </div>
+            <div className="field">
+              <label>Estado</label>
+              <select value={form.estado} onChange={e=>set("estado",e.target.value)}>
+                <option value="empacado">Empacado</option>
+                <option value="listo_para_envio">Listo para envío</option>
+                <option value="enviado">Enviado</option>
+              </select>
+            </div>
+            <div className="field form-full">
+              <label>Observaciones</label>
+              <textarea value={form.observaciones} onChange={e=>set("observaciones",e.target.value)} rows={2}
+                placeholder="Notas adicionales sobre esta caja..."/>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+            {loading?<><span className="spinner"/> Guardando...</>:cajaExistente?"Guardar Cambios":"Registrar Caja"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── VISTA: CAJAS DE EMBALAJE ──────────────────────────────────────────────────
+function CajasEmbalajeView({ centro, tipos, categorias }) {
+  const [cajas, setCajas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editando, setEditando] = useState(null);
+  const [filtroTipo, setFiltroTipo] = useState("all");
+
+  const fetchCajas = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("cajas_embalaje")
+      .select("*").eq("centro_id", centro.id).order("created_at", { ascending: false });
+    setCajas(data || []);
+    setLoading(false);
+  }, [centro.id]);
+
+  useEffect(() => { fetchCajas(); }, [fetchCajas]);
+
+  const getNombre = (id, arr) => arr.find(a=>a.id===id)?.nombre || "—";
+  const filtradas = filtroTipo === "all" ? cajas : cajas.filter(c=>c.tipo_id===filtroTipo);
+
+  const totalPeso = filtradas.reduce((s,c)=>s+(parseFloat(c.peso_kg)||0),0);
+  const totalVol = filtradas.reduce((s,c)=>s+(parseFloat(c.volumen_m3)||0),0);
+
+  const cambiarEstado = async (id, estado) => {
+    await supabase.from("cajas_embalaje").update({estado}).eq("id", id);
+    setCajas(prev=>prev.map(c=>c.id===id?{...c,estado}:c));
+  };
+
+  const eliminar = async (id) => {
+    if (!confirm("¿Eliminar esta caja registrada? No se puede deshacer.")) return;
+    await supabase.from("cajas_embalaje").delete().eq("id", id);
+    setCajas(prev=>prev.filter(c=>c.id!==id));
+  };
+
+  return (
+    <div className="content">
+      <div className="page-header">
+        <div className="page-header-text">
+          <h2>Cajas de Embalaje</h2>
+          <p>Peso y volumen real medido de cada caja física empacada · {centro.nombre}</p>
+        </div>
+        <button className="btn btn-primary" onClick={()=>{setEditando(null);setShowModal(true);}} disabled={centro.estado!=="aprobado"}>
+          ＋ Registrar Caja
+        </button>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card accent-blue">
+          <div className="stat-label">Total de cajas</div>
+          <div className="stat-value">{filtradas.length}</div>
+        </div>
+        <div className="stat-card accent-amber">
+          <div className="stat-label">Peso real total</div>
+          <div className="stat-value">{totalPeso.toFixed(2)}</div>
+          <div className="stat-sub">kg</div>
+        </div>
+        <div className="stat-card accent-navy">
+          <div className="stat-label">Volumen real total</div>
+          <div className="stat-value">{totalVol.toFixed(3)}</div>
+          <div className="stat-sub">m³</div>
+        </div>
+      </div>
+
+      <div className="card card-pad mb-4">
+        <div className="field" style={{maxWidth:260}}>
+          <label>Filtrar por tipo</label>
+          <select value={filtroTipo} onChange={e=>setFiltroTipo(e.target.value)}>
+            <option value="all">Todos los tipos</option>
+            {tipos.map(t=><option key={t.id} value={t.id}>{t.nombre}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3>Cajas registradas ({filtradas.length})</h3></div>
+        <div className="table-wrap">
+          {loading ? <div className="empty-state"><p>Cargando...</p></div>
+          : filtradas.length===0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">📦</div>
+              <h3>Sin cajas registradas</h3>
+              <p>Cuando empaquen una caja física, regístrala aquí con su peso y volumen real medido.</p>
+            </div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Caja</th><th>Tipo</th><th>Categoría</th><th>Contenido</th>
+                  <th>Dimensiones (cm)</th><th>Volumen (m³)</th><th>Peso (kg)</th>
+                  <th>Fecha</th><th>Estado</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtradas.map(c=>(
+                  <tr key={c.id}>
+                    <td style={{fontWeight:600}}>{c.numero_caja || "—"}</td>
+                    <td style={{fontSize:12}}>{getNombre(c.tipo_id, tipos)}</td>
+                    <td style={{fontSize:12}}>{getNombre(c.categoria_id, categorias)}</td>
+                    <td style={{fontSize:12,maxWidth:200}}>{c.contenido_resumen || "—"}</td>
+                    <td style={{fontSize:12,whiteSpace:"nowrap"}}>
+                      {c.largo_cm&&c.ancho_cm&&c.alto_cm ? `${c.largo_cm}×${c.ancho_cm}×${c.alto_cm}` : "—"}
+                    </td>
+                    <td style={{fontSize:12}}>{c.volumen_m3 ? parseFloat(c.volumen_m3).toFixed(5) : "—"}</td>
+                    <td style={{fontWeight:600}}>{parseFloat(c.peso_kg).toFixed(2)}</td>
+                    <td style={{fontSize:12,whiteSpace:"nowrap"}}>{c.fecha_empaque}</td>
+                    <td>
+                      <select value={c.estado} onChange={e=>cambiarEstado(c.id,e.target.value)}
+                        style={{fontSize:11,padding:"3px 6px",border:"1px solid var(--slate-200)",borderRadius:4,cursor:"pointer"}}>
+                        <option value="empacado">Empacado</option>
+                        <option value="listo_para_envio">Listo p/envío</option>
+                        <option value="enviado">Enviado</option>
+                      </select>
+                    </td>
+                    <td>
+                      <div className="flex gap-2">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>{setEditando(c);setShowModal(true);}}>✎</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>eliminar(c.id)}>🗑</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {showModal && (
+        <ModalCaja
+          onClose={()=>{setShowModal(false);setEditando(null);}}
+          onSaved={()=>{setShowModal(false);setEditando(null);fetchCajas();}}
+          tipos={tipos} categorias={categorias} centroId={centro.id}
+          cajaExistente={editando}
+        />
+      )}
+    </div>
+  );
+}
+
 function ManifiestoView({ centro }) {
-  const [data, setData] = useState([]);
+  const [modo, setModo] = useState("estimado"); // "estimado" | "real"
+  const [dataEstimado, setDataEstimado] = useState([]);
+  const [dataReal, setDataReal] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("listo_para_envio");
 
   useEffect(()=>{
     (async()=>{
       setLoading(true);
-      const { data } = await supabase.from("vista_manifiesto").select("*").eq("centro_id",centro.id);
-      setData(data||[]);
+      const [{ data: est }, { data: real }] = await Promise.all([
+        supabase.from("vista_manifiesto").select("*").eq("centro_id",centro.id),
+        supabase.from("vista_manifiesto_real").select("*").eq("centro_id",centro.id),
+      ]);
+      setDataEstimado(est||[]);
+      setDataReal(real||[]);
       setLoading(false);
     })();
   },[centro.id]);
 
+  const data = modo === "estimado" ? dataEstimado : dataReal;
   const filtrados = filtroEstado==="all" ? data : data.filter(d=>d.estado===filtroEstado);
-  const totalPeso = filtrados.reduce((s,d)=>s+(parseFloat(d.peso_total_kg)||0),0);
-  const totalVol = filtrados.reduce((s,d)=>s+(parseFloat(d.volumen_total_m3)||0),0);
+  const totalPeso = modo === "estimado"
+    ? filtrados.reduce((s,d)=>s+(parseFloat(d.peso_total_kg)||0),0)
+    : filtrados.reduce((s,d)=>s+(parseFloat(d.peso_kg)||0),0);
+  const totalVol = modo === "estimado"
+    ? filtrados.reduce((s,d)=>s+(parseFloat(d.volumen_total_m3)||0),0)
+    : filtrados.reduce((s,d)=>s+(parseFloat(d.volumen_m3)||0),0);
 
   const exportCSV = () => {
-    const headers=["Tipo","Categoría","Producto","Presentación","Unidad","Talla","Cantidad","Uds.Mín.","Peso Unit.(kg)","Peso Total(kg)","Vol.Total(m³)","Estado","Fecha","Observaciones"];
-    const rows=filtrados.map(d=>[d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.presentacion_mg||"",d.unidad,d.talla||"",d.cantidad_total,d.total_unidades_minimas||"",d.peso_unitario_kg,d.peso_total_kg,d.volumen_total_m3,d.estado,d.fecha_ingreso,d.observaciones||""]);
+    let headers, rows;
+    if (modo === "estimado") {
+      headers=["Tipo","Categoría","Producto","Presentación","Unidad","Talla","Cantidad","Uds.Mín.","Peso Unit.(kg)","Peso Total(kg)","Vol.Total(m³)","Estado","Fecha","Observaciones"];
+      rows=filtrados.map(d=>[d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.presentacion_mg||"",d.unidad,d.talla||"",d.cantidad_total,d.total_unidades_minimas||"",d.peso_unitario_kg,d.peso_total_kg,d.volumen_total_m3,d.estado,d.fecha_ingreso,d.observaciones||""]);
+    } else {
+      headers=["Caja","Tipo","Categoría","Contenido","Largo(cm)","Ancho(cm)","Alto(cm)","Volumen(m³)","Peso(kg)","Estado","Fecha Empaque","Observaciones"];
+      rows=filtrados.map(d=>[d.numero_caja||"",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"",d.largo_cm||"",d.ancho_cm||"",d.alto_cm||"",d.volumen_m3||"",d.peso_kg,d.estado,d.fecha_empaque,d.observaciones||""]);
+    }
     const csv=[headers,...rows].map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
     const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a"); a.href=url;
-    a.download=`manifiesto_${centro.nombre.replace(/\s+/g,"_")}_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download=`manifiesto_${modo}_${centro.nombre.replace(/\s+/g,"_")}_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
   };
 
@@ -1056,6 +1374,21 @@ function ManifiestoView({ centro }) {
         <div className="page-header-text"><h2>Manifiesto de Carga</h2><p>Listado para aerolíneas, aduana y logística</p></div>
         <button className="btn btn-success" onClick={exportCSV} disabled={filtrados.length===0}>↓ Exportar CSV</button>
       </div>
+
+      <div className="type-tabs mb-4">
+        <button className={`type-tab ${modo==="estimado"?"active":""}`} onClick={()=>setModo("estimado")}>
+          📊 Estimado (catálogo)
+        </button>
+        <button className={`type-tab ${modo==="real"?"active":""}`} onClick={()=>setModo("real")}>
+          📦 Real (cajas embaladas)
+        </button>
+      </div>
+      <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
+        {modo === "estimado"
+          ? "Calculado con cantidad × peso/volumen unitario del catálogo. Útil para estimar mientras llega la mercancía."
+          : "Basado en el peso y volumen REAL medido con báscula y cinta métrica de cada caja ya empacada. Este es el dato más confiable para el manifiesto final."}
+      </div>
+
       <div className="card card-pad mb-4">
         <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-end"}}>
           <div className="field" style={{width:220}}><label>Estado a incluir</label>
@@ -1067,18 +1400,19 @@ function ManifiestoView({ centro }) {
             </select>
           </div>
           <div style={{display:"flex",gap:12}}>
-            <div className="stat-card accent-amber" style={{padding:"10px 16px",minWidth:110}}><div className="stat-label">Peso bruto</div><div className="stat-value" style={{fontSize:18}}>{totalPeso.toFixed(2)} kg</div></div>
+            <div className="stat-card accent-amber" style={{padding:"10px 16px",minWidth:110}}><div className="stat-label">Peso {modo==="real"?"real":"bruto"}</div><div className="stat-value" style={{fontSize:18}}>{totalPeso.toFixed(2)} kg</div></div>
             <div className="stat-card accent-navy" style={{padding:"10px 16px",minWidth:110}}><div className="stat-label">Volumen</div><div className="stat-value" style={{fontSize:18}}>{totalVol.toFixed(4)} m³</div></div>
             <div className="stat-card accent-blue" style={{padding:"10px 16px",minWidth:80}}><div className="stat-label">Líneas</div><div className="stat-value" style={{fontSize:18}}>{filtrados.length}</div></div>
           </div>
         </div>
       </div>
+
       <div className="card">
         <div className="card-header"><h3>{centro.nombre} → Venezuela</h3></div>
         <div className="table-wrap">
           {loading ? <div className="empty-state"><p>Cargando...</p></div>
           : filtrados.length===0 ? <div className="empty-state"><div style={{fontSize:48}}>📋</div><h3>Sin registros para este estado</h3></div>
-          : (
+          : modo === "estimado" ? (
             <table>
               <thead><tr><th>#</th><th>Tipo</th><th>Categoría</th><th>Producto</th><th>Conc.</th><th>Unidad</th><th>Talla</th><th>Cantidad</th><th>Uds.Mín.</th><th>Peso Unit.</th><th>Peso Total</th><th>Volumen</th></tr></thead>
               <tbody>
@@ -1102,6 +1436,29 @@ function ManifiestoView({ centro }) {
                   <td colSpan={10} style={{textAlign:"right",color:"var(--navy)",paddingRight:16}}>TOTALES</td>
                   <td style={{color:"var(--navy)"}}>{totalPeso.toFixed(3)} kg</td>
                   <td style={{color:"var(--navy)"}}>{totalVol.toFixed(5)} m³</td>
+                </tr>
+              </tbody>
+            </table>
+          ) : (
+            <table>
+              <thead><tr><th>#</th><th>Caja</th><th>Tipo</th><th>Categoría</th><th>Contenido</th><th>Dimensiones</th><th>Volumen</th><th>Peso Real</th></tr></thead>
+              <tbody>
+                {filtrados.map((d,i)=>(
+                  <tr key={d.id}>
+                    <td style={{color:"var(--slate-400)",fontSize:11}}>{i+1}</td>
+                    <td style={{fontWeight:600}}>{d.numero_caja||"—"}</td>
+                    <td style={{fontSize:12}}>{d.tipo_nombre}</td>
+                    <td style={{fontSize:12}}>{d.categoria_nombre}</td>
+                    <td style={{fontWeight:500,maxWidth:220}}>{d.contenido_resumen||"—"}</td>
+                    <td style={{fontSize:12,whiteSpace:"nowrap"}}>{d.largo_cm&&d.ancho_cm&&d.alto_cm?`${d.largo_cm}×${d.ancho_cm}×${d.alto_cm} cm`:"—"}</td>
+                    <td style={{fontSize:12}}>{d.volumen_m3?parseFloat(d.volumen_m3).toFixed(5):"—"}</td>
+                    <td style={{fontWeight:600}}>{parseFloat(d.peso_kg||0).toFixed(3)} kg</td>
+                  </tr>
+                ))}
+                <tr style={{background:"var(--slate-50)",fontWeight:700}}>
+                  <td colSpan={6} style={{textAlign:"right",color:"var(--navy)",paddingRight:16}}>TOTALES</td>
+                  <td style={{color:"var(--navy)"}}>{totalVol.toFixed(5)} m³</td>
+                  <td style={{color:"var(--navy)"}}>{totalPeso.toFixed(3)} kg</td>
                 </tr>
               </tbody>
             </table>
@@ -1200,6 +1557,7 @@ function AppShell({ usuario, centro, tipos, categorias, catalogo, onCatalogoChan
   const nav = [
     {id:"dashboard",label:"Panel Principal",icon:"home"},
     {id:"inventario",label:"Inventario",icon:"list"},
+    {id:"cajas",label:"Cajas de Embalaje",icon:"package"},
     {id:"resumen-centro",label:"Resumen de mi Centro",icon:"chart"},
     {id:"resumen-global",label:"Resumen Global",icon:"globe"},
     {id:"manifiesto",label:"Manifiesto de Carga",icon:"truck"},
@@ -1239,6 +1597,7 @@ function AppShell({ usuario, centro, tipos, categorias, catalogo, onCatalogoChan
       <main className="main">
         {vista==="dashboard"&&<Dashboard centro={centro} tipos={tipos} categorias={categorias} catalogo={catalogo} onCatalogoChange={onCatalogoChange}/>}
         {vista==="inventario"&&<InventarioView centro={centro} tipos={tipos} categorias={categorias} catalogo={catalogo} onCatalogoChange={onCatalogoChange}/>}
+        {vista==="cajas"&&<CajasEmbalajeView centro={centro} tipos={tipos} categorias={categorias}/>}
         {vista==="resumen-centro"&&<ResumenCentroView centro={centro} tipos={tipos}/>}
         {vista==="resumen-global"&&<ResumenGlobalView/>}
         {vista==="manifiesto"&&<ManifiestoView centro={centro}/>}
