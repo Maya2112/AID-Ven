@@ -1003,72 +1003,265 @@ function InventarioView({ centro, tipos, categorias, tiposParaCaptura, categoria
   );
 }
 
+// ─── HELPER: GENERAR PDF (jsPDF + autoTable, cargado vía CDN) ─────────────────
+let _jsPDFLoaded = null;
+function cargarJsPDF() {
+  if (_jsPDFLoaded) return _jsPDFLoaded;
+  _jsPDFLoaded = new Promise((resolve, reject) => {
+    if (window.jspdf?.jsPDF) { resolve(window.jspdf.jsPDF); return; }
+    const s1 = document.createElement("script");
+    s1.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s1.onload = () => {
+      const s2 = document.createElement("script");
+      s2.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js";
+      s2.onload = () => resolve(window.jspdf.jsPDF);
+      s2.onerror = reject;
+      document.head.appendChild(s2);
+    };
+    s1.onerror = reject;
+    document.head.appendChild(s1);
+  });
+  return _jsPDFLoaded;
+}
+
+const NAVY_RGB = [15, 31, 61];
+const SLATE_RGB = [100, 116, 139];
+
+function dibujarEncabezadoPDF(doc, { titulo, subtitulo, centroNombre, fuenteLabel }) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  // Banda superior navy
+  doc.setFillColor(...NAVY_RGB);
+  doc.rect(0, 0, pageWidth, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(15);
+  doc.setFont(undefined, "bold");
+  doc.text("AcopioVen", 14, 10);
+  doc.setFontSize(8);
+  doc.setFont(undefined, "normal");
+  doc.text("Ayuda humanitaria", 14, 15.5);
+  const fecha = new Date().toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" });
+  doc.setFontSize(8);
+  doc.text(`Generado: ${fecha}`, pageWidth - 14, 10, { align: "right" });
+
+  // Titulo del documento
+  doc.setTextColor(...NAVY_RGB);
+  doc.setFontSize(14);
+  doc.setFont(undefined, "bold");
+  doc.text(titulo, 14, 32);
+  doc.setFontSize(9.5);
+  doc.setFont(undefined, "normal");
+  doc.setTextColor(...SLATE_RGB);
+  doc.text(subtitulo, 14, 38);
+  if (fuenteLabel) {
+    doc.setFontSize(8.5);
+    doc.setTextColor(5, 150, 105);
+    doc.setFont(undefined, "bold");
+    doc.text(`Fuente: ${fuenteLabel}`, pageWidth - 14, 38, { align: "right" });
+  }
+  return 44; // Y donde puede continuar el contenido
+}
+
+function dibujarStatsPDF(doc, startY, stats) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const gap = 4;
+  const cardW = (pageWidth - margin*2 - gap*(stats.length-1)) / stats.length;
+  const cardH = 16;
+  stats.forEach((s, i) => {
+    const x = margin + i*(cardW+gap);
+    doc.setFillColor(248, 250, 252);
+    doc.rect(x, startY, cardW, cardH, "F");
+    doc.setDrawColor(...(s.color || NAVY_RGB));
+    doc.setLineWidth(0.8);
+    doc.line(x, startY, x+cardW, startY);
+    doc.setFontSize(7);
+    doc.setTextColor(...SLATE_RGB);
+    doc.setFont(undefined, "normal");
+    doc.text(s.label.toUpperCase(), x+3, startY+5.5);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont(undefined, "bold");
+    doc.text(String(s.value), x+3, startY+12);
+  });
+  return startY + cardH + 8;
+}
+
+function dibujarPiePDF(doc, nota) {
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(14, pageHeight-14, pageWidth-14, pageHeight-14);
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.setFont(undefined, "normal");
+    doc.text(nota, 14, pageHeight-9);
+    doc.text(`Página ${i} de ${pageCount}`, pageWidth-14, pageHeight-9, { align: "right" });
+  }
+}
+
 function ResumenCentroView({ centro, tipos }) {
+  const [modo, setModo] = useState("donaciones"); // "donaciones" (estimado) | "cajas" (real)
   const [data, setData] = useState([]);
+  const [dataCajas, setDataCajas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandidos, setExpandidos] = useState({});
+  const [exportando, setExportando] = useState(false);
 
   useEffect(()=>{
     (async()=>{
       setLoading(true);
-      const { data } = await supabase.from("vista_resumen_centro").select("*").eq("centro_id",centro.id);
-      setData(data||[]);
+      const [{ data: d1 }, { data: d2 }] = await Promise.all([
+        supabase.from("vista_resumen_centro").select("*").eq("centro_id",centro.id),
+        supabase.from("vista_cajas_resumen").select("*").eq("centro_id",centro.id),
+      ]);
+      setData(d1||[]);
+      setDataCajas(d2||[]);
       setLoading(false);
     })();
   },[centro.id]);
 
   const toggle = id => setExpandidos(e=>({...e,[id]:!e[id]}));
-  const porTipo = {};
-  data.forEach(r=>{ if(!porTipo[r.tipo_id]) porTipo[r.tipo_id]={nombre:r.tipo_nombre,icono:r.tipo_icono,items:[]}; porTipo[r.tipo_id].items.push(r); });
+  const fuenteActual = modo === "donaciones" ? data : dataCajas;
 
-  const totalCant = data.reduce((s,r)=>s+(parseInt(r.cantidad_total)||0),0);
-  const totalPeso = data.reduce((s,r)=>s+(parseFloat(r.peso_total_kg)||0),0);
-  const totalVol = data.reduce((s,r)=>s+(parseFloat(r.volumen_total_m3)||0),0);
+  const porTipo = {};
+  fuenteActual.forEach(r=>{ if(!porTipo[r.tipo_id]) porTipo[r.tipo_id]={nombre:r.tipo_nombre,icono:r.tipo_icono,items:[]}; porTipo[r.tipo_id].items.push(r); });
+
+  const totalCant = modo==="donaciones" ? data.reduce((s,r)=>s+(parseInt(r.cantidad_total)||0),0) : dataCajas.reduce((s,r)=>s+(parseInt(r.total_cajas)||0),0);
+  const totalPeso = fuenteActual.reduce((s,r)=>s+(parseFloat(r.peso_total_kg)||0),0);
+  const totalVol = fuenteActual.reduce((s,r)=>s+(parseFloat(r.volumen_total_m3)||0),0);
+
+  const exportarPDF = async () => {
+    setExportando(true);
+    try {
+      const jsPDF = await cargarJsPDF();
+      const doc = new jsPDF();
+      let y = dibujarEncabezadoPDF(doc, {
+        titulo: "Resumen de mi Centro",
+        subtitulo: centro.nombre,
+        fuenteLabel: modo === "donaciones" ? "Estimado (donaciones)" : "Real (cajas embaladas)",
+      });
+      y = dibujarStatsPDF(doc, y, [
+        { label: modo==="donaciones"?"Total unidades":"Total cajas", value: totalCant.toLocaleString(), color: [37,99,235] },
+        { label: "Peso total (kg)", value: totalPeso.toFixed(1), color: [217,119,6] },
+        { label: "Volumen (m³)", value: totalVol.toFixed(3), color: [15,31,61] },
+        { label: "Tipos con stock", value: Object.keys(porTipo).length, color: [5,150,105] },
+      ]);
+
+      const rows = [];
+      Object.values(porTipo).forEach(grupo => {
+        grupo.items.forEach(r => {
+          if (modo === "donaciones") {
+            rows.push([grupo.nombre, r.categoria_nombre, r.total_registros, parseInt(r.cantidad_total).toLocaleString(), parseInt(r.cant_listo||0), parseFloat(r.peso_total_kg||0).toFixed(2)]);
+          } else {
+            rows.push([grupo.nombre, r.categoria_nombre, r.total_cajas, parseFloat(r.peso_total_kg||0).toFixed(2), parseFloat(r.volumen_total_m3||0).toFixed(4), r.cajas_listas||0]);
+          }
+        });
+      });
+      const headers = modo === "donaciones"
+        ? [["Tipo","Categoría","Registros","Total","Listo p/envío","Peso (kg)"]]
+        : [["Tipo","Categoría","Cajas","Peso (kg)","Volumen (m³)","Listas p/envío"]];
+
+      doc.autoTable({
+        startY: y, head: headers, body: rows,
+        theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
+        bodyStyles: { fontSize: 8.5 }, alternateRowStyles: { fillColor: [248,250,252] },
+        margin: { left: 14, right: 14 },
+      });
+      dibujarPiePDF(doc, `AcopioVen · ${centro.nombre}`);
+      doc.save(`resumen_centro_${modo}_${centro.nombre.replace(/\s+/g,"_")}.pdf`);
+    } catch(e) {
+      alert("No se pudo generar el PDF. Revisa tu conexión e intenta de nuevo.");
+    }
+    setExportando(false);
+  };
 
   return (
     <div className="content">
-      <div className="page-header"><div className="page-header-text"><h2>Resumen de mi Centro</h2><p>Conteo consolidado de {centro.nombre}</p></div></div>
+      <div className="page-header">
+        <div className="page-header-text"><h2>Resumen de mi Centro</h2><p>Conteo consolidado de {centro.nombre}</p></div>
+        <button className="btn btn-success" onClick={exportarPDF} disabled={exportando || loading}>
+          {exportando ? <><span className="spinner"/> Generando...</> : "↓ Exportar PDF"}
+        </button>
+      </div>
+
+      <div className="type-tabs mb-4">
+        <button className={`type-tab ${modo==="donaciones"?"active":""}`} onClick={()=>setModo("donaciones")}>📊 Donaciones (estimado)</button>
+        <button className={`type-tab ${modo==="cajas"?"active":""}`} onClick={()=>setModo("cajas")}>📦 Cajas de embalaje (real)</button>
+      </div>
+
       <div className="stats-grid mb-6">
-        <div className="stat-card accent-blue"><div className="stat-label">Total unidades</div><div className="stat-value">{totalCant.toLocaleString()}</div></div>
+        <div className="stat-card accent-blue"><div className="stat-label">{modo==="donaciones"?"Total unidades":"Total cajas"}</div><div className="stat-value">{totalCant.toLocaleString()}</div></div>
         <div className="stat-card accent-amber"><div className="stat-label">Peso total</div><div className="stat-value">{totalPeso.toFixed(1)}</div><div className="stat-sub">kilogramos</div></div>
         <div className="stat-card accent-navy"><div className="stat-label">Volumen total</div><div className="stat-value">{totalVol.toFixed(3)}</div><div className="stat-sub">m³</div></div>
         <div className="stat-card accent-green"><div className="stat-label">Tipos con stock</div><div className="stat-value">{Object.keys(porTipo).length}</div></div>
       </div>
+
       {loading ? <div className="empty-state"><p>Calculando resumen...</p></div>
-      : Object.keys(porTipo).length===0 ? <div className="empty-state"><div style={{fontSize:48}}>📊</div><h3>Sin datos</h3><p>Registra donaciones para ver el resumen.</p></div>
+      : Object.keys(porTipo).length===0 ? (
+        <div className="empty-state">
+          <div style={{fontSize:48}}>{modo==="donaciones"?"📊":"📦"}</div>
+          <h3>Sin datos</h3>
+          <p>{modo==="donaciones" ? "Registra donaciones para ver el resumen." : "Registra cajas de embalaje para ver el resumen real."}</p>
+        </div>
+      )
       : Object.entries(porTipo).map(([tipoId,grupo])=>{
-        const subtotalCant=grupo.items.reduce((s,r)=>s+(parseInt(r.cantidad_total)||0),0);
+        const subtotalCant = modo==="donaciones"
+          ? grupo.items.reduce((s,r)=>s+(parseInt(r.cantidad_total)||0),0)
+          : grupo.items.reduce((s,r)=>s+(parseInt(r.total_cajas)||0),0);
         const subtotalPeso=grupo.items.reduce((s,r)=>s+(parseFloat(r.peso_total_kg)||0),0);
         return (
           <div key={tipoId} className="tipo-section">
             <div className="tipo-header" onClick={()=>toggle(tipoId)}>
               <h3><Ico name={grupo.icono} size={16}/> {grupo.nombre}</h3>
               <div className="tipo-meta">
-                <span><strong>{subtotalCant.toLocaleString()}</strong> uds</span>
+                <span><strong>{subtotalCant.toLocaleString()}</strong> {modo==="donaciones"?"uds":"cajas"}</span>
                 <span><strong>{subtotalPeso.toFixed(1)}</strong> kg</span>
                 <span>{expandidos[tipoId]?"▲":"▼"}</span>
               </div>
             </div>
             {expandidos[tipoId]&&(
               <div className="tipo-body">
-                <table>
-                  <thead><tr><th>Categoría</th><th>Registros</th><th>Total</th><th>Recibido</th><th>Empacado</th><th>Listo</th><th>Enviado</th><th>Peso(kg)</th><th>Vol(m³)</th></tr></thead>
-                  <tbody>
-                    {grupo.items.map(r=>(
-                      <tr key={r.categoria_id}>
-                        <td style={{fontWeight:500}}>{r.categoria_nombre}</td>
-                        <td>{r.total_registros}</td>
-                        <td style={{fontWeight:600}}>{parseInt(r.cantidad_total).toLocaleString()}</td>
-                        <td>{parseInt(r.cant_recibido||0)}</td>
-                        <td>{parseInt(r.cant_empacado||0)}</td>
-                        <td><span className="badge badge-green">{parseInt(r.cant_listo||0)}</span></td>
-                        <td>{parseInt(r.cant_enviado||0)}</td>
-                        <td>{parseFloat(r.peso_total_kg||0).toFixed(2)}</td>
-                        <td>{parseFloat(r.volumen_total_m3||0).toFixed(4)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {modo === "donaciones" ? (
+                  <table>
+                    <thead><tr><th>Categoría</th><th>Registros</th><th>Total</th><th>Recibido</th><th>Empacado</th><th>Listo</th><th>Enviado</th><th>Peso(kg)</th><th>Vol(m³)</th></tr></thead>
+                    <tbody>
+                      {grupo.items.map(r=>(
+                        <tr key={r.categoria_id}>
+                          <td style={{fontWeight:500}}>{r.categoria_nombre}</td>
+                          <td>{r.total_registros}</td>
+                          <td style={{fontWeight:600}}>{parseInt(r.cantidad_total).toLocaleString()}</td>
+                          <td>{parseInt(r.cant_recibido||0)}</td>
+                          <td>{parseInt(r.cant_empacado||0)}</td>
+                          <td><span className="badge badge-green">{parseInt(r.cant_listo||0)}</span></td>
+                          <td>{parseInt(r.cant_enviado||0)}</td>
+                          <td>{parseFloat(r.peso_total_kg||0).toFixed(2)}</td>
+                          <td>{parseFloat(r.volumen_total_m3||0).toFixed(4)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table>
+                    <thead><tr><th>Categoría</th><th>Total cajas</th><th>Empacadas</th><th>Listas p/envío</th><th>Enviadas</th><th>Peso(kg)</th><th>Vol(m³)</th></tr></thead>
+                    <tbody>
+                      {grupo.items.map(r=>(
+                        <tr key={r.categoria_id}>
+                          <td style={{fontWeight:500}}>{r.categoria_nombre}</td>
+                          <td style={{fontWeight:600}}>{parseInt(r.total_cajas).toLocaleString()}</td>
+                          <td>{parseInt(r.cajas_empacadas||0)}</td>
+                          <td><span className="badge badge-green">{parseInt(r.cajas_listas||0)}</span></td>
+                          <td>{parseInt(r.cajas_enviadas||0)}</td>
+                          <td>{parseFloat(r.peso_total_kg||0).toFixed(2)}</td>
+                          <td>{parseFloat(r.volumen_total_m3||0).toFixed(4)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             )}
           </div>
@@ -1079,62 +1272,149 @@ function ResumenCentroView({ centro, tipos }) {
 }
 
 function ResumenGlobalView() {
+  const [modo, setModo] = useState("donaciones");
   const [data, setData] = useState([]);
+  const [dataCajas, setDataCajas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandidos, setExpandidos] = useState({});
+  const [exportando, setExportando] = useState(false);
 
   useEffect(()=>{
     (async()=>{
       setLoading(true);
-      const { data } = await supabase.from("vista_resumen_global").select("*");
-      setData(data||[]);
+      const [{ data: d1 }, { data: d2 }] = await Promise.all([
+        supabase.from("vista_resumen_global").select("*"),
+        supabase.from("vista_cajas_resumen_global").select("*"),
+      ]);
+      setData(d1||[]);
+      setDataCajas(d2||[]);
       setLoading(false);
     })();
   },[]);
 
   const toggle = id => setExpandidos(e=>({...e,[id]:!e[id]}));
+  const fuenteActual = modo === "donaciones" ? data : dataCajas;
   const porTipo = {};
-  data.forEach(r=>{ if(!porTipo[r.tipo_id]) porTipo[r.tipo_id]={nombre:r.tipo_nombre,icono:r.tipo_icono,items:[]}; porTipo[r.tipo_id].items.push(r); });
-  const totalCant=data.reduce((s,r)=>s+(parseInt(r.cantidad_total)||0),0);
-  const totalPeso=data.reduce((s,r)=>s+(parseFloat(r.peso_total_kg)||0),0);
+  fuenteActual.forEach(r=>{ if(!porTipo[r.tipo_id]) porTipo[r.tipo_id]={nombre:r.tipo_nombre,icono:r.tipo_icono,items:[]}; porTipo[r.tipo_id].items.push(r); });
+  const totalCant = modo==="donaciones" ? data.reduce((s,r)=>s+(parseInt(r.cantidad_total)||0),0) : dataCajas.reduce((s,r)=>s+(parseInt(r.total_cajas)||0),0);
+  const totalPeso = fuenteActual.reduce((s,r)=>s+(parseFloat(r.peso_total_kg)||0),0);
+
+  const exportarPDF = async () => {
+    setExportando(true);
+    try {
+      const jsPDF = await cargarJsPDF();
+      const doc = new jsPDF();
+      let y = dibujarEncabezadoPDF(doc, {
+        titulo: "Resumen Global",
+        subtitulo: "Todos los centros de acopio aprobados",
+        fuenteLabel: modo === "donaciones" ? "Estimado (donaciones)" : "Real (cajas embaladas)",
+      });
+      y = dibujarStatsPDF(doc, y, [
+        { label: modo==="donaciones"?"Total unidades":"Total cajas", value: totalCant.toLocaleString(), color: [37,99,235] },
+        { label: "Peso global (kg)", value: totalPeso.toFixed(1), color: [217,119,6] },
+        { label: "Tipos de producto", value: Object.keys(porTipo).length, color: [5,150,105] },
+      ]);
+
+      const rows = [];
+      Object.values(porTipo).forEach(grupo => {
+        grupo.items.forEach(r => {
+          if (modo === "donaciones") {
+            rows.push([grupo.nombre, r.categoria_nombre, r.centros_participantes, parseInt(r.cantidad_total).toLocaleString(), parseInt(r.cant_listo||0), parseFloat(r.peso_total_kg||0).toFixed(2)]);
+          } else {
+            rows.push([grupo.nombre, r.categoria_nombre, r.centros_participantes, r.total_cajas, parseFloat(r.peso_total_kg||0).toFixed(2), r.cajas_listas||0]);
+          }
+        });
+      });
+      const headers = modo === "donaciones"
+        ? [["Tipo","Categoría","Centros","Total uds","Listo p/envío","Peso (kg)"]]
+        : [["Tipo","Categoría","Centros","Cajas","Peso (kg)","Listas p/envío"]];
+
+      doc.autoTable({
+        startY: y, head: headers, body: rows,
+        theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
+        bodyStyles: { fontSize: 8.5 }, alternateRowStyles: { fillColor: [248,250,252] },
+        margin: { left: 14, right: 14 },
+      });
+      dibujarPiePDF(doc, "AcopioVen · Resumen Global");
+      doc.save(`resumen_global_${modo}.pdf`);
+    } catch(e) {
+      alert("No se pudo generar el PDF. Revisa tu conexión e intenta de nuevo.");
+    }
+    setExportando(false);
+  };
 
   return (
     <div className="content">
-      <div className="page-header"><div className="page-header-text"><h2>Resumen Global 🌍</h2><p>Suma de todos los centros aprobados — solo lectura</p></div></div>
+      <div className="page-header">
+        <div className="page-header-text"><h2>Resumen Global 🌍</h2><p>Suma de todos los centros aprobados — solo lectura</p></div>
+        <button className="btn btn-success" onClick={exportarPDF} disabled={exportando || loading}>
+          {exportando ? <><span className="spinner"/> Generando...</> : "↓ Exportar PDF"}
+        </button>
+      </div>
       <div className="alert alert-info mb-4">👁 Vista de solo lectura. Muestra en tiempo real la suma de todos los centros de acopio aprobados.</div>
+
+      <div className="type-tabs mb-4">
+        <button className={`type-tab ${modo==="donaciones"?"active":""}`} onClick={()=>setModo("donaciones")}>📊 Donaciones (estimado)</button>
+        <button className={`type-tab ${modo==="cajas"?"active":""}`} onClick={()=>setModo("cajas")}>📦 Cajas de embalaje (real)</button>
+      </div>
+
       <div className="stats-grid mb-6">
-        <div className="stat-card accent-blue"><div className="stat-label">Total unidades (global)</div><div className="stat-value">{totalCant.toLocaleString()}</div></div>
+        <div className="stat-card accent-blue"><div className="stat-label">{modo==="donaciones"?"Total unidades":"Total cajas"} (global)</div><div className="stat-value">{totalCant.toLocaleString()}</div></div>
         <div className="stat-card accent-amber"><div className="stat-label">Peso global</div><div className="stat-value">{totalPeso.toFixed(1)}</div><div className="stat-sub">kg</div></div>
         <div className="stat-card accent-green"><div className="stat-label">Tipos de producto</div><div className="stat-value">{Object.keys(porTipo).length}</div></div>
       </div>
+
       {loading ? <div className="empty-state"><p>Cargando datos globales...</p></div>
-      : Object.keys(porTipo).length===0 ? <div className="empty-state"><div style={{fontSize:48}}>🌍</div><h3>Sin datos globales</h3><p>Aparecerá aquí cuando los centros aprobados registren donaciones.</p></div>
+      : Object.keys(porTipo).length===0 ? (
+        <div className="empty-state">
+          <div style={{fontSize:48}}>🌍</div><h3>Sin datos globales</h3>
+          <p>{modo==="donaciones" ? "Aparecerá aquí cuando los centros aprobados registren donaciones." : "Aparecerá aquí cuando los centros aprobados registren cajas de embalaje."}</p>
+        </div>
+      )
       : Object.entries(porTipo).map(([tipoId,grupo])=>{
-        const sub=grupo.items.reduce((s,r)=>s+(parseInt(r.cantidad_total)||0),0);
+        const sub = modo==="donaciones" ? grupo.items.reduce((s,r)=>s+(parseInt(r.cantidad_total)||0),0) : grupo.items.reduce((s,r)=>s+(parseInt(r.total_cajas)||0),0);
         const subP=grupo.items.reduce((s,r)=>s+(parseFloat(r.peso_total_kg)||0),0);
         return (
           <div key={tipoId} className="tipo-section">
             <div className="tipo-header" onClick={()=>toggle(tipoId)}>
               <h3><Ico name={grupo.icono} size={16}/> {grupo.nombre}</h3>
-              <div className="tipo-meta"><span><strong>{sub.toLocaleString()}</strong> uds</span><span><strong>{subP.toFixed(1)}</strong> kg</span><span>{expandidos[tipoId]?"▲":"▼"}</span></div>
+              <div className="tipo-meta"><span><strong>{sub.toLocaleString()}</strong> {modo==="donaciones"?"uds":"cajas"}</span><span><strong>{subP.toFixed(1)}</strong> kg</span><span>{expandidos[tipoId]?"▲":"▼"}</span></div>
             </div>
             {expandidos[tipoId]&&(
               <div className="tipo-body">
-                <table>
-                  <thead><tr><th>Categoría</th><th>Centros</th><th>Total</th><th>Listo p/envío</th><th>Enviado</th><th>Peso(kg)</th></tr></thead>
-                  <tbody>
-                    {grupo.items.map(r=>(
-                      <tr key={r.categoria_id}>
-                        <td style={{fontWeight:500}}>{r.categoria_nombre}</td>
-                        <td>{r.centros_participantes}</td>
-                        <td style={{fontWeight:600}}>{parseInt(r.cantidad_total).toLocaleString()}</td>
-                        <td><span className="badge badge-green">{parseInt(r.cant_listo||0).toLocaleString()}</span></td>
-                        <td>{parseInt(r.cant_enviado||0).toLocaleString()}</td>
-                        <td>{parseFloat(r.peso_total_kg||0).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {modo === "donaciones" ? (
+                  <table>
+                    <thead><tr><th>Categoría</th><th>Centros</th><th>Total</th><th>Listo p/envío</th><th>Enviado</th><th>Peso(kg)</th></tr></thead>
+                    <tbody>
+                      {grupo.items.map(r=>(
+                        <tr key={r.categoria_id}>
+                          <td style={{fontWeight:500}}>{r.categoria_nombre}</td>
+                          <td>{r.centros_participantes}</td>
+                          <td style={{fontWeight:600}}>{parseInt(r.cantidad_total).toLocaleString()}</td>
+                          <td><span className="badge badge-green">{parseInt(r.cant_listo||0).toLocaleString()}</span></td>
+                          <td>{parseInt(r.cant_enviado||0).toLocaleString()}</td>
+                          <td>{parseFloat(r.peso_total_kg||0).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table>
+                    <thead><tr><th>Categoría</th><th>Centros</th><th>Cajas</th><th>Listas p/envío</th><th>Enviadas</th><th>Peso(kg)</th></tr></thead>
+                    <tbody>
+                      {grupo.items.map(r=>(
+                        <tr key={r.categoria_id}>
+                          <td style={{fontWeight:500}}>{r.categoria_nombre}</td>
+                          <td>{r.centros_participantes}</td>
+                          <td style={{fontWeight:600}}>{parseInt(r.total_cajas).toLocaleString()}</td>
+                          <td><span className="badge badge-green">{parseInt(r.cajas_listas||0)}</span></td>
+                          <td>{parseInt(r.cajas_enviadas||0)}</td>
+                          <td>{parseFloat(r.peso_total_kg||0).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             )}
           </div>
@@ -1450,25 +1730,32 @@ function CajasEmbalajeView({ centro, tipos, categorias }) {
   );
 }
 
-function ManifiestoView({ centro }) {
+function ManifiestoView({ centro, esAdmin }) {
+  const [alcance, setAlcance] = useState("centro"); // "centro" | "global" (solo admin)
   const [modo, setModo] = useState("estimado"); // "estimado" | "real"
   const [dataEstimado, setDataEstimado] = useState([]);
   const [dataReal, setDataReal] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("listo_para_envio");
+  const [exportandoPDF, setExportandoPDF] = useState(false);
 
   useEffect(()=>{
     (async()=>{
       setLoading(true);
-      const [{ data: est }, { data: real }] = await Promise.all([
-        supabase.from("vista_manifiesto").select("*").eq("centro_id",centro.id),
-        supabase.from("vista_manifiesto_real").select("*").eq("centro_id",centro.id),
-      ]);
+      const tablaEst = alcance === "global" ? "vista_manifiesto_global" : "vista_manifiesto";
+      const tablaReal = alcance === "global" ? "vista_manifiesto_real_global" : "vista_manifiesto_real";
+      let queryEst = supabase.from(tablaEst).select("*");
+      let queryReal = supabase.from(tablaReal).select("*");
+      if (alcance === "centro") {
+        queryEst = queryEst.eq("centro_id", centro.id);
+        queryReal = queryReal.eq("centro_id", centro.id);
+      }
+      const [{ data: est }, { data: real }] = await Promise.all([queryEst, queryReal]);
       setDataEstimado(est||[]);
       setDataReal(real||[]);
       setLoading(false);
     })();
-  },[centro.id]);
+  },[centro.id, alcance]);
 
   const data = modo === "estimado" ? dataEstimado : dataReal;
   const filtrados = filtroEstado==="all" ? data : data.filter(d=>d.estado===filtroEstado);
@@ -1479,29 +1766,86 @@ function ManifiestoView({ centro }) {
     ? filtrados.reduce((s,d)=>s+(parseFloat(d.volumen_total_m3)||0),0)
     : filtrados.reduce((s,d)=>s+(parseFloat(d.volumen_m3)||0),0);
 
+  const tituloAlcance = alcance === "global" ? "Todos los centros aprobados" : `${centro.nombre} → Venezuela`;
+  const nombreArchivo = alcance === "global" ? "global" : centro.nombre.replace(/\s+/g,"_");
+
   const exportCSV = () => {
     let headers, rows;
+    const incluyeCentro = alcance === "global";
     if (modo === "estimado") {
-      headers=["Tipo","Categoría","Producto","Presentación","Unidad","Talla","Cantidad","Uds.Mín.","Peso Unit.(kg)","Peso Total(kg)","Vol.Total(m³)","Estado","Fecha","Observaciones"];
-      rows=filtrados.map(d=>[d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.presentacion_mg||"",d.unidad,d.talla||"",d.cantidad_total,d.total_unidades_minimas||"",d.peso_unitario_kg,d.peso_total_kg,d.volumen_total_m3,d.estado,d.fecha_ingreso,d.observaciones||""]);
+      headers=[...(incluyeCentro?["Centro"]:[]),"Tipo","Categoría","Producto","Presentación","Unidad","Talla","Cantidad","Uds.Mín.","Peso Unit.(kg)","Peso Total(kg)","Vol.Total(m³)","Estado","Fecha","Observaciones"];
+      rows=filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.presentacion_mg||"",d.unidad,d.talla||"",d.cantidad_total,d.total_unidades_minimas||"",d.peso_unitario_kg,d.peso_total_kg,d.volumen_total_m3,d.estado,d.fecha_ingreso,d.observaciones||""]);
     } else {
-      headers=["Caja","Tipo","Categoría","Contenido","Largo(cm)","Ancho(cm)","Alto(cm)","Volumen(m³)","Peso(kg)","Estado","Fecha Empaque","Observaciones"];
-      rows=filtrados.map(d=>[d.numero_caja||"",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"",d.largo_cm||"",d.ancho_cm||"",d.alto_cm||"",d.volumen_m3||"",d.peso_kg,d.estado,d.fecha_empaque,d.observaciones||""]);
+      headers=[...(incluyeCentro?["Centro"]:[]),"Caja","Tipo","Categoría","Contenido","Largo(cm)","Ancho(cm)","Alto(cm)","Volumen(m³)","Peso(kg)","Estado","Fecha Empaque","Observaciones"];
+      rows=filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.numero_caja||"",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"",d.largo_cm||"",d.ancho_cm||"",d.alto_cm||"",d.volumen_m3||"",d.peso_kg,d.estado,d.fecha_empaque,d.observaciones||""]);
     }
     const csv=[headers,...rows].map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
     const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a"); a.href=url;
-    a.download=`manifiesto_${modo}_${centro.nombre.replace(/\s+/g,"_")}_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download=`manifiesto_${modo}_${nombreArchivo}_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
+  };
+
+  const exportPDF = async () => {
+    setExportandoPDF(true);
+    try {
+      const jsPDF = await cargarJsPDF();
+      const doc = new jsPDF({ orientation: "landscape" });
+      let y = dibujarEncabezadoPDF(doc, {
+        titulo: "Manifiesto de Carga",
+        subtitulo: tituloAlcance,
+        fuenteLabel: modo === "estimado" ? "Estimado (catálogo)" : "Real (cajas embaladas)",
+      });
+      y = dibujarStatsPDF(doc, y, [
+        { label: "Líneas", value: filtrados.length, color: [37,99,235] },
+        { label: modo==="real"?"Peso real (kg)":"Peso bruto (kg)", value: totalPeso.toFixed(2), color: [217,119,6] },
+        { label: "Volumen (m³)", value: totalVol.toFixed(4), color: [15,31,61] },
+      ]);
+
+      const incluyeCentro = alcance === "global";
+      let headers, rows;
+      if (modo === "estimado") {
+        headers = [...(incluyeCentro?["Centro"]:[]),"Tipo","Categoría","Producto","Unidad","Cantidad","Peso (kg)","Vol (m³)"];
+        rows = filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.unidad,d.cantidad_total,parseFloat(d.peso_total_kg||0).toFixed(2),parseFloat(d.volumen_total_m3||0).toFixed(4)]);
+      } else {
+        headers = [...(incluyeCentro?["Centro"]:[]),"Caja","Tipo","Categoría","Contenido","Peso (kg)","Vol (m³)"];
+        rows = filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.numero_caja||"—",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"—",parseFloat(d.peso_kg||0).toFixed(2),d.volumen_m3?parseFloat(d.volumen_m3).toFixed(4):"—"]);
+      }
+      doc.autoTable({
+        startY: y, head: [headers], body: rows,
+        theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8 },
+        bodyStyles: { fontSize: 7.5 }, alternateRowStyles: { fillColor: [248,250,252] },
+        margin: { left: 14, right: 14 },
+        foot: [[...(incluyeCentro?[""]:[]), ...(modo==="estimado"?["","TOTALES","",""]:["","TOTALES",""]), totalPeso.toFixed(2), totalVol.toFixed(4)]],
+        footStyles: { fillColor: [220,230,241], textColor: NAVY_RGB, fontStyle: "bold", fontSize: 8 },
+      });
+      dibujarPiePDF(doc, "AcopioVen · Declaración de mercancía: ayuda humanitaria sin fines de lucro");
+      doc.save(`manifiesto_${modo}_${nombreArchivo}.pdf`);
+    } catch(e) {
+      alert("No se pudo generar el PDF. Revisa tu conexión e intenta de nuevo.");
+    }
+    setExportandoPDF(false);
   };
 
   return (
     <div className="content">
       <div className="page-header">
         <div className="page-header-text"><h2>Manifiesto de Carga</h2><p>Listado para aerolíneas, aduana y logística</p></div>
-        <button className="btn btn-success" onClick={exportCSV} disabled={filtrados.length===0}>↓ Exportar CSV</button>
+        <div className="flex gap-2">
+          <button className="btn btn-secondary" onClick={exportCSV} disabled={filtrados.length===0}>↓ CSV</button>
+          <button className="btn btn-success" onClick={exportPDF} disabled={filtrados.length===0 || exportandoPDF}>
+            {exportandoPDF ? <><span className="spinner"/> Generando...</> : "↓ Exportar PDF"}
+          </button>
+        </div>
       </div>
+
+      {esAdmin && (
+        <div className="type-tabs mb-3">
+          <button className={`type-tab ${alcance==="centro"?"active":""}`} onClick={()=>setAlcance("centro")}>🏢 Mi centro</button>
+          <button className={`type-tab ${alcance==="global"?"active":""}`} onClick={()=>setAlcance("global")}>🌍 Global (todos los centros)</button>
+        </div>
+      )}
 
       <div className="type-tabs mb-4">
         <button className={`type-tab ${modo==="estimado"?"active":""}`} onClick={()=>setModo("estimado")}>
@@ -1536,16 +1880,17 @@ function ManifiestoView({ centro }) {
       </div>
 
       <div className="card">
-        <div className="card-header"><h3>{centro.nombre} → Venezuela</h3></div>
+        <div className="card-header"><h3>{tituloAlcance}</h3></div>
         <div className="table-wrap">
           {loading ? <div className="empty-state"><p>Cargando...</p></div>
           : filtrados.length===0 ? <div className="empty-state"><div style={{fontSize:48}}>📋</div><h3>Sin registros para este estado</h3></div>
           : modo === "estimado" ? (
             <table>
-              <thead><tr><th>#</th><th>Tipo</th><th>Categoría</th><th>Producto</th><th>Conc.</th><th>Unidad</th><th>Talla</th><th>Cantidad</th><th>Uds.Mín.</th><th>Peso Unit.</th><th>Peso Total</th><th>Volumen</th></tr></thead>
+              <thead><tr>{alcance==="global"&&<th>Centro</th>}<th>#</th><th>Tipo</th><th>Categoría</th><th>Producto</th><th>Conc.</th><th>Unidad</th><th>Talla</th><th>Cantidad</th><th>Uds.Mín.</th><th>Peso Unit.</th><th>Peso Total</th><th>Volumen</th></tr></thead>
               <tbody>
                 {filtrados.map((d,i)=>(
                   <tr key={d.id}>
+                    {alcance==="global"&&<td style={{fontSize:12,fontWeight:500}}>{d.centro_nombre}</td>}
                     <td style={{color:"var(--slate-400)",fontSize:11}}>{i+1}</td>
                     <td style={{fontSize:12}}>{d.tipo_nombre}</td>
                     <td style={{fontSize:12}}>{d.categoria_nombre}</td>
@@ -1561,7 +1906,7 @@ function ManifiestoView({ centro }) {
                   </tr>
                 ))}
                 <tr style={{background:"var(--slate-50)",fontWeight:700}}>
-                  <td colSpan={10} style={{textAlign:"right",color:"var(--navy)",paddingRight:16}}>TOTALES</td>
+                  <td colSpan={alcance==="global"?11:10} style={{textAlign:"right",color:"var(--navy)",paddingRight:16}}>TOTALES</td>
                   <td style={{color:"var(--navy)"}}>{totalPeso.toFixed(3)} kg</td>
                   <td style={{color:"var(--navy)"}}>{totalVol.toFixed(5)} m³</td>
                 </tr>
@@ -1569,10 +1914,11 @@ function ManifiestoView({ centro }) {
             </table>
           ) : (
             <table>
-              <thead><tr><th>#</th><th>Caja</th><th>Tipo</th><th>Categoría</th><th>Contenido</th><th>Dimensiones</th><th>Volumen</th><th>Peso Real</th></tr></thead>
+              <thead><tr>{alcance==="global"&&<th>Centro</th>}<th>#</th><th>Caja</th><th>Tipo</th><th>Categoría</th><th>Contenido</th><th>Dimensiones</th><th>Volumen</th><th>Peso Real</th></tr></thead>
               <tbody>
                 {filtrados.map((d,i)=>(
                   <tr key={d.id}>
+                    {alcance==="global"&&<td style={{fontSize:12,fontWeight:500}}>{d.centro_nombre}</td>}
                     <td style={{color:"var(--slate-400)",fontSize:11}}>{i+1}</td>
                     <td style={{fontWeight:600}}>{d.numero_caja||"—"}</td>
                     <td style={{fontSize:12}}>{d.tipo_nombre}</td>
@@ -1584,7 +1930,7 @@ function ManifiestoView({ centro }) {
                   </tr>
                 ))}
                 <tr style={{background:"var(--slate-50)",fontWeight:700}}>
-                  <td colSpan={6} style={{textAlign:"right",color:"var(--navy)",paddingRight:16}}>TOTALES</td>
+                  <td colSpan={alcance==="global"?7:6} style={{textAlign:"right",color:"var(--navy)",paddingRight:16}}>TOTALES</td>
                   <td style={{color:"var(--navy)"}}>{totalVol.toFixed(5)} m³</td>
                   <td style={{color:"var(--navy)"}}>{totalPeso.toFixed(3)} kg</td>
                 </tr>
@@ -1809,7 +2155,7 @@ function AppShell({ usuario, centro, tipos, categorias, tiposParaCaptura, catego
         {vista==="cajas"&&<CajasEmbalajeView centro={centro} tipos={tipos} categorias={categorias}/>}
         {vista==="resumen-centro"&&<ResumenCentroView centro={centro} tipos={tipos}/>}
         {vista==="resumen-global"&&<ResumenGlobalView/>}
-        {vista==="manifiesto"&&<ManifiestoView centro={centro}/>}
+        {vista==="manifiesto"&&<ManifiestoView centro={centro} esAdmin={isAdmin}/>}
         {vista==="admin"&&<AdminView usuario={usuario}/>}
       </main>
     </div>
