@@ -405,7 +405,8 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
   const [form, setForm] = useState({
     tipo_id:"", categoria_id:"", catalogo_id:"", nombre_producto:"", presentacion_mg:"",
     unidad:"unidad", cantidad_total:"", unidades_nivel2:"", unidades_nivel3:"",
-    talla:"", peso_unitario_kg:"", volumen_unitario_m3:"",
+    tipo_frasco:"", volumen_ml_frasco:"",
+    talla:"", peso_unitario_kg:"",
     estado:"recibido", fecha_ingreso:new Date().toISOString().split("T")[0], observaciones:""
   });
   const [loading, setLoading] = useState(false);
@@ -445,12 +446,13 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
         unidad: match.unidad_base || f.unidad,
         unidades_nivel2: match.unidades_nivel2 ? String(match.unidades_nivel2) : f.unidades_nivel2,
         unidades_nivel3: match.unidades_nivel3 ? String(match.unidades_nivel3) : f.unidades_nivel3,
-        peso_unitario_kg: String(match.peso_unitario_kg ?? f.peso_unitario_kg),
-        volumen_unitario_m3: String(match.volumen_unitario_m3 ?? f.volumen_unitario_m3),
+        tipo_frasco: match.tipo_frasco || f.tipo_frasco,
+        volumen_ml_frasco: match.volumen_ml_frasco ? String(match.volumen_ml_frasco) : f.volumen_ml_frasco,
+        peso_unitario_kg: match.peso_unitario_kg ? String(match.peso_unitario_kg) : f.peso_unitario_kg,
       }));
       setPesoEditadoManual(false);
     } else {
-      // Producto nuevo, no en catalogo: limpiar catalogo_id pero dejar peso/volumen editables
+      // Producto nuevo, no en catalogo: limpiar catalogo_id pero dejar peso editable
       set("catalogo_id", "");
     }
   };
@@ -465,9 +467,11 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
     }
     setError(""); setLoading(true);
 
-    // Si el producto no existe en el catalogo, lo guardamos para futuras donaciones (calculo automatico)
+    const esFrasco = form.unidad === "frasco";
+
+    // Si el producto no existe en el catalogo, lo guardamos para futuras donaciones (peso autocompletado la proxima vez)
     let catalogoId = form.catalogo_id || null;
-    if (!catalogoId && form.peso_unitario_kg) {
+    if (!catalogoId) {
       const { data: nuevoProd } = await supabase.from("catalogo_productos").insert({
         tipo_id: form.tipo_id,
         categoria_id: form.categoria_id,
@@ -477,8 +481,9 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
         unidad_base: form.unidad,
         unidades_nivel2: form.unidades_nivel2 ? parseInt(form.unidades_nivel2) : null,
         unidades_nivel3: form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null,
-        peso_unitario_kg: parseFloat(form.peso_unitario_kg)||0,
-        volumen_unitario_m3: parseFloat(form.volumen_unitario_m3)||0,
+        tipo_frasco: esFrasco ? (form.tipo_frasco||null) : null,
+        volumen_ml_frasco: esFrasco && form.tipo_frasco==="liquido" ? (parseFloat(form.volumen_ml_frasco)||null) : null,
+        peso_unitario_kg: form.peso_unitario_kg ? parseFloat(form.peso_unitario_kg) : 0,
         es_predeterminado: false,
       }).select("id").single();
       if (nuevoProd) catalogoId = nuevoProd.id;
@@ -494,10 +499,11 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
       unidad: form.unidad,
       cantidad_total: parseInt(form.cantidad_total),
       unidades_nivel2: form.unidades_nivel2 ? parseInt(form.unidades_nivel2) : null,
-      unidades_nivel3: form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null,
+      unidades_nivel3: esFrasco && form.tipo_frasco==="solido" ? parseInt(form.unidades_nivel3)||null : (form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null),
+      tipo_frasco: esFrasco ? (form.tipo_frasco||null) : null,
+      volumen_ml_frasco: esFrasco && form.tipo_frasco==="liquido" ? (parseFloat(form.volumen_ml_frasco)||null) : null,
       talla: form.talla||null,
-      peso_unitario_kg: parseFloat(form.peso_unitario_kg)||0,
-      volumen_unitario_m3: parseFloat(form.volumen_unitario_m3)||0,
+      peso_unitario_kg: form.peso_unitario_kg ? parseFloat(form.peso_unitario_kg) : 0,
       estado: form.estado,
       fecha_ingreso: form.fecha_ingreso,
       observaciones: form.observaciones||null,
@@ -576,8 +582,8 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
                 </datalist>
                 <span className="hint">
                   {form.catalogo_id
-                    ? "✓ Producto del catálogo — peso y volumen cargados automáticamente (puedes editarlos)"
-                    : "Producto nuevo — define su peso y volumen abajo (se guardará para la próxima vez)"}
+                    ? "✓ Producto del catálogo — peso cargado automáticamente (puedes editarlo)"
+                    : "Producto nuevo — el peso es opcional (se guardará para la próxima vez)"}
                 </span>
               </div>
               {esMed && (
@@ -620,27 +626,45 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
                   <input type="number" min="1" value={form.unidades_nivel3} onChange={e=>set("unidades_nivel3",e.target.value)} placeholder="Ej: 10"/>
                 </div>
               )}
+              {esMed && form.unidad==="frasco" && (
+                <div className="field">
+                  <label>Contenido del frasco <span className="req">*</span></label>
+                  <select value={form.tipo_frasco} onChange={e=>set("tipo_frasco",e.target.value)}>
+                    <option value="">— Selecciona —</option>
+                    <option value="solido">Sólido (pastillas/cápsulas)</option>
+                    <option value="liquido">Líquido (jarabe, solución)</option>
+                  </select>
+                </div>
+              )}
+              {esMed && form.unidad==="frasco" && form.tipo_frasco==="solido" && (
+                <div className="field">
+                  <label>Pastillas / cápsulas por frasco</label>
+                  <input type="number" min="1" value={form.unidades_nivel3} onChange={e=>set("unidades_nivel3",e.target.value)} placeholder="Ej: 100"/>
+                </div>
+              )}
+              {esMed && form.unidad==="frasco" && form.tipo_frasco==="liquido" && (
+                <div className="field">
+                  <label>Volumen por frasco (ml)</label>
+                  <input type="number" min="1" value={form.volumen_ml_frasco} onChange={e=>set("volumen_ml_frasco",e.target.value)} placeholder="Ej: 120"/>
+                  <span className="hint">Solo informativo de la presentación (ej. jarabe 120ml)</span>
+                </div>
+              )}
             </div>
-            {esMed && form.cantidad_total && (
+            {esMed && form.cantidad_total && (form.unidad!=="frasco" || form.tipo_frasco==="solido") && (
               <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
                 📊 Total de pastillas/cápsulas: <strong>{totalMin().toLocaleString()}</strong>
               </div>
             )}
 
-            <div className="section-label">Peso y Volumen {form.catalogo_id && <span style={{color:"var(--green)",fontWeight:400}}>· autocompletado</span>}</div>
+            <div className="section-label">Peso (opcional) {form.catalogo_id && form.peso_unitario_kg && <span style={{color:"var(--green)",fontWeight:400}}>· autocompletado</span>}</div>
             <div className="form-grid mb-4">
               <div className="field">
                 <label>Peso por {form.unidad} (kg)</label>
                 <input type="number" step="0.001" min="0" value={form.peso_unitario_kg}
-                  onChange={e=>{set("peso_unitario_kg",e.target.value);setPesoEditadoManual(true);}} placeholder="0.050"/>
+                  onChange={e=>{set("peso_unitario_kg",e.target.value);setPesoEditadoManual(true);}} placeholder="0.050 (opcional)"/>
                 {form.peso_unitario_kg&&form.cantidad_total&&(
                   <span className="hint">Total: {(parseFloat(form.peso_unitario_kg)*parseInt(form.cantidad_total||0)).toFixed(2)} kg</span>
                 )}
-              </div>
-              <div className="field">
-                <label>Volumen por {form.unidad} (m³)</label>
-                <input type="number" step="0.000001" min="0" value={form.volumen_unitario_m3}
-                  onChange={e=>{set("volumen_unitario_m3",e.target.value);setPesoEditadoManual(true);}} placeholder="0.000300"/>
               </div>
             </div>
 
