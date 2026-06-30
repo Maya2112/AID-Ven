@@ -28,7 +28,7 @@ const CSS = `
   body { font-family: var(--font-ui); background: var(--slate-50); color: var(--slate-900); min-height: 100vh; overflow-x: hidden; max-width: 100vw; }
   .app { overflow-x: hidden; max-width: 100vw; }
   .app { display: flex; min-height: 100vh; }
-  .sidebar { width: 240px; background: var(--navy); color: white; display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; height: 100vh; z-index: 50; }
+  .sidebar { width: 240px; background: var(--navy); color: white; display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; height: 100vh; z-index: 51; overflow-y: auto; }
   .sidebar-logo { padding: 24px 20px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
   .sidebar-logo h1 { font-family: var(--font-display); font-size: 20px; font-weight: 700; color: white; letter-spacing: -.3px; }
   .sidebar-logo p { font-size: 11px; color: rgba(255,255,255,.45); margin-top: 2px; text-transform: uppercase; letter-spacing: .8px; }
@@ -170,7 +170,7 @@ const CSS = `
     .mobile-topbar .hamburger-btn span { background: white; }
     .mobile-topbar-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
     .sidebar-overlay.open {
-      display: block; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 49;
+      display: block; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50;
     }
   }
 `;
@@ -1732,10 +1732,18 @@ function AppShell({ usuario, centro, tipos, categorias, tiposParaCaptura, catego
       <div className="sidebar-overlay" style={overlayStyle} onClick={()=>setSidebarAbierto(false)}/>
 
       <aside className={`sidebar ${sidebarAbierto?"open":""}`} style={sidebarStyle}>
-        <div className="sidebar-logo">
-          <div className="sidebar-flag">🇻🇪</div>
-          <h1>AcopioVen</h1>
-          <p>Ayuda Humanitaria</p>
+        <div className="sidebar-logo" style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
+          <div>
+            <div className="sidebar-flag">🇻🇪</div>
+            <h1>AcopioVen</h1>
+            <p>Ayuda Humanitaria</p>
+          </div>
+          {esMovil && (
+            <button onClick={()=>setSidebarAbierto(false)} aria-label="Cerrar menú"
+              style={{background:"rgba(255,255,255,.1)",border:"none",color:"white",width:30,height:30,borderRadius:6,fontSize:16,cursor:"pointer",flexShrink:0}}>
+              ✕
+            </button>
+          )}
         </div>
         <nav className="sidebar-nav">
           <div className="nav-label">Navegación</div>
