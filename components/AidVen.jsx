@@ -146,12 +146,29 @@ const CSS = `
   .mt-2 { margin-top: 8px; } .mt-4 { margin-top: 16px; }
   .flex { display: flex; } .items-center { align-items: center; } .gap-2 { gap: 8px; } .gap-3 { gap: 12px; }
   .text-sm { font-size: 12.5px; } .text-muted { color: var(--slate-500); } .font-600 { font-weight: 600; }
+  /* Topbar movil con boton hamburguesa */
+  .mobile-topbar { display: none; }
+  .hamburger-btn { background: none; border: none; cursor: pointer; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .hamburger-btn span { display: block; width: 22px; height: 2px; background: var(--slate-700); border-radius: 1px; }
+  .sidebar-overlay { display: none; }
+
   @media (max-width: 768px) {
-    .sidebar { transform: translateX(-100%); }
+    .sidebar { transform: translateX(-100%); transition: transform .25s ease; }
+    .sidebar.open { transform: translateX(0); }
     .main { margin-left: 0; }
     .form-grid, .form-grid-3, .grid-2 { grid-template-columns: 1fr; }
     .stats-grid { grid-template-columns: 1fr 1fr; }
     .content { padding: 16px; }
+    .mobile-topbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; background: var(--navy); color: white;
+      position: sticky; top: 0; z-index: 40;
+    }
+    .mobile-topbar .hamburger-btn span { background: white; }
+    .mobile-topbar-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .sidebar-overlay.open {
+      display: block; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 49;
+    }
   }
 `;
 
@@ -1575,6 +1592,7 @@ function AdminView({ usuario }) {
 // ─── APP SHELL ────────────────────────────────────────────────────────────────
 function AppShell({ usuario, centro, tipos, categorias, catalogo, onCatalogoChange }) {
   const [vista, setVista] = useState("dashboard");
+  const [sidebarAbierto, setSidebarAbierto] = useState(false);
   const isAdmin = usuario?.rol==="admin_global";
   const logout = () => supabase.auth.signOut();
 
@@ -1588,9 +1606,21 @@ function AppShell({ usuario, centro, tipos, categorias, catalogo, onCatalogoChan
     ...(isAdmin?[{id:"admin",label:"Administración",icon:"admin"}]:[]),
   ];
 
+  const irA = (id) => { setVista(id); setSidebarAbierto(false); };
+  const tituloActual = nav.find(n=>n.id===vista)?.label || "AcopioVen";
+
   return (
     <div className="app">
-      <aside className="sidebar">
+      <div className={`mobile-topbar`}>
+        <button className="hamburger-btn" onClick={()=>setSidebarAbierto(true)} aria-label="Abrir menú">
+          <span/><span/><span/>
+        </button>
+        <div className="mobile-topbar-title">🇻🇪 {tituloActual}</div>
+      </div>
+
+      <div className={`sidebar-overlay ${sidebarAbierto?"open":""}`} onClick={()=>setSidebarAbierto(false)}/>
+
+      <aside className={`sidebar ${sidebarAbierto?"open":""}`}>
         <div className="sidebar-logo">
           <div className="sidebar-flag">🇻🇪</div>
           <h1>AcopioVen</h1>
@@ -1599,7 +1629,7 @@ function AppShell({ usuario, centro, tipos, categorias, catalogo, onCatalogoChan
         <nav className="sidebar-nav">
           <div className="nav-label">Navegación</div>
           {nav.map(item=>(
-            <button key={item.id} className={`nav-btn ${vista===item.id?"active":""}`} onClick={()=>setVista(item.id)}>
+            <button key={item.id} className={`nav-btn ${vista===item.id?"active":""}`} onClick={()=>irA(item.id)}>
               <Ico name={item.icon} size={14}/> {item.label}
             </button>
           ))}
