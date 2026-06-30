@@ -1,0 +1,16 @@
+{
+  "name": "aidven",
+  "version": "1.0.0",
+  "description": "Control de donaciones - Ayuda Humanitaria Venezuela",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "react": "^18",
+    "react-dom": "^18",
+    "@supabase/supabase-js": "^2"
+  }
+}
