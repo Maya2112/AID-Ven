@@ -293,22 +293,133 @@ function AuthView() {
   );
 }
 
+// ─── MODAL: NUEVO TIPO DE PRODUCTO ────────────────────────────────────────────
+function ModalNuevoTipo({ onClose, onCreated }) {
+  const [nombre, setNombre] = useState("");
+  const [descripcion, setDescripcion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSave = async () => {
+    if (!nombre.trim()) { setError("El nombre es obligatorio."); return; }
+    setError(""); setLoading(true);
+    const { error: err } = await supabase.from("tipos_producto").insert({
+      nombre: nombre.trim(), descripcion: descripcion.trim() || null,
+      icono: "package", es_predeterminado: false,
+    });
+    if (err) { setError(err.message); setLoading(false); return; }
+    onCreated();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:440}}>
+        <div className="modal-header">
+          <h2>Nuevo Tipo de Producto</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error mb-3">⚠️ {error}</div>}
+          <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
+            Este tipo quedará disponible para todos los centros de acopio.
+          </div>
+          <div className="field mb-3">
+            <label>Nombre <span className="req">*</span></label>
+            <input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Ej: Material Escolar" autoFocus/>
+          </div>
+          <div className="field">
+            <label>Descripción (opcional)</label>
+            <textarea value={descripcion} onChange={e=>setDescripcion(e.target.value)} rows={2}
+              placeholder="Breve descripción de qué incluye este tipo"/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+            {loading?<><span className="spinner"/> Creando...</>:"Crear Tipo"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MODAL: NUEVA CATEGORÍA ────────────────────────────────────────────────────
+function ModalNuevaCategoria({ onClose, onCreated, tipoId, tipoNombre }) {
+  const [nombre, setNombre] = useState("");
+  const [descripcion, setDescripcion] = useState("");
+  const [tieneTalla, setTieneTalla] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSave = async () => {
+    if (!nombre.trim()) { setError("El nombre es obligatorio."); return; }
+    setError(""); setLoading(true);
+    const { error: err } = await supabase.from("categorias").insert({
+      tipo_id: tipoId, nombre: nombre.trim(), descripcion: descripcion.trim() || null,
+      tiene_campo_talla: tieneTalla, es_predeterminada: false,
+    });
+    if (err) { setError(err.message); setLoading(false); return; }
+    onCreated();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:440}}>
+        <div className="modal-header">
+          <h2>Nueva Categoría</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error mb-3">⚠️ {error}</div>}
+          <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
+            Esta categoría se agregará dentro de <strong>{tipoNombre}</strong> y quedará disponible para todos los centros.
+          </div>
+          <div className="field mb-3">
+            <label>Nombre <span className="req">*</span></label>
+            <input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Ej: Cuadernos y Libretas" autoFocus/>
+          </div>
+          <div className="field mb-3">
+            <label>Leyenda / guía (opcional)</label>
+            <textarea value={descripcion} onChange={e=>setDescripcion(e.target.value)} rows={2}
+              placeholder="Ej: Cuadernos, libretas, lápices, colores..."/>
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer"}}>
+            <input type="checkbox" checked={tieneTalla} onChange={e=>setTieneTalla(e.target.checked)}/>
+            Esta categoría necesita campo de talla/tamaño (ej. pañales, bolsas)
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+            {loading?<><span className="spinner"/> Creando...</>:"Crear Categoría"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MODAL DONACIÓN ───────────────────────────────────────────────────────────
-function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
+function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId, onCatalogoChange }) {
   const [form, setForm] = useState({
-    tipo_id:"", categoria_id:"", nombre_producto:"", presentacion_mg:"",
+    tipo_id:"", categoria_id:"", catalogo_id:"", nombre_producto:"", presentacion_mg:"",
     unidad:"unidad", cantidad_total:"", unidades_nivel2:"", unidades_nivel3:"",
     talla:"", peso_unitario_kg:"", volumen_unitario_m3:"",
     estado:"recibido", fecha_ingreso:new Date().toISOString().split("T")[0], observaciones:""
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showNuevoTipo, setShowNuevoTipo] = useState(false);
+  const [showNuevaCategoria, setShowNuevaCategoria] = useState(false);
+  const [pesoEditadoManual, setPesoEditadoManual] = useState(false);
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
 
   const tipoSel = tipos.find(t=>t.id===form.tipo_id);
   const esMed = tipoSel?.nombre?.toLowerCase().includes("medicamento");
   const catsFiltradas = categorias.filter(c=>c.tipo_id===form.tipo_id);
   const catSel = categorias.find(c=>c.id===form.categoria_id);
+  const productosFiltrados = catalogo.filter(p=>p.categoria_id===form.categoria_id);
 
   const totalMin = () => {
     const c=parseInt(form.cantidad_total)||0;
@@ -321,15 +432,63 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
     ? ["caja","blister","frasco","ampolla","vial","sobre","unidad"]
     : ["unidad","caja","paquete","bolsa","litro","kg","rollo","par","juego","pieza"];
 
+  // Al elegir un producto del catalogo, autocompletar peso/volumen/unidad/presentacion
+  const handleSeleccionarProducto = (nombreEscrito) => {
+    set("nombre_producto", nombreEscrito);
+    const match = productosFiltrados.find(p => p.nombre.toLowerCase() === nombreEscrito.toLowerCase());
+    if (match) {
+      setForm(f => ({
+        ...f,
+        nombre_producto: match.nombre,
+        catalogo_id: match.id,
+        presentacion_mg: match.presentacion_mg || f.presentacion_mg,
+        unidad: match.unidad_base || f.unidad,
+        unidades_nivel2: match.unidades_nivel2 ? String(match.unidades_nivel2) : f.unidades_nivel2,
+        unidades_nivel3: match.unidades_nivel3 ? String(match.unidades_nivel3) : f.unidades_nivel3,
+        peso_unitario_kg: String(match.peso_unitario_kg ?? f.peso_unitario_kg),
+        volumen_unitario_m3: String(match.volumen_unitario_m3 ?? f.volumen_unitario_m3),
+      }));
+      setPesoEditadoManual(false);
+    } else {
+      // Producto nuevo, no en catalogo: limpiar catalogo_id pero dejar peso/volumen editables
+      set("catalogo_id", "");
+    }
+  };
+
   const handleSave = async () => {
+    if (!centroId) {
+      setError("Tu cuenta no tiene un centro de acopio asignado. Contacta al administrador para que te asigne uno antes de registrar donaciones.");
+      return;
+    }
     if (!form.tipo_id||!form.categoria_id||!form.nombre_producto||!form.cantidad_total) {
       setError("Completa: Tipo, Categoría, Nombre del producto y Cantidad."); return;
     }
     setError(""); setLoading(true);
+
+    // Si el producto no existe en el catalogo, lo guardamos para futuras donaciones (calculo automatico)
+    let catalogoId = form.catalogo_id || null;
+    if (!catalogoId && form.peso_unitario_kg) {
+      const { data: nuevoProd } = await supabase.from("catalogo_productos").insert({
+        tipo_id: form.tipo_id,
+        categoria_id: form.categoria_id,
+        nombre: form.nombre_producto,
+        es_medicamento: esMed,
+        presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
+        unidad_base: form.unidad,
+        unidades_nivel2: form.unidades_nivel2 ? parseInt(form.unidades_nivel2) : null,
+        unidades_nivel3: form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null,
+        peso_unitario_kg: parseFloat(form.peso_unitario_kg)||0,
+        volumen_unitario_m3: parseFloat(form.volumen_unitario_m3)||0,
+        es_predeterminado: false,
+      }).select("id").single();
+      if (nuevoProd) catalogoId = nuevoProd.id;
+    }
+
     const { error:err } = await supabase.from("donaciones").insert({
       centro_id: centroId,
       tipo_id: form.tipo_id,
       categoria_id: form.categoria_id,
+      catalogo_id: catalogoId,
       nombre_producto: form.nombre_producto,
       presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
       unidad: form.unidad,
@@ -344,6 +503,7 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
       observaciones: form.observaciones||null,
     });
     if (err) { setError(err.message); setLoading(false); return; }
+    if (onCatalogoChange) onCatalogoChange();
     onSaved();
   };
 
@@ -357,11 +517,16 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
         <div className="modal-body">
           {error && <div className="alert alert-error mb-3">⚠️ {error}</div>}
 
-          <div className="section-label">Tipo de producto</div>
+          <div className="flex justify-between items-center mb-2">
+            <div className="section-label" style={{marginBottom:0}}>Tipo de producto</div>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setShowNuevoTipo(true)}>
+              ＋ Nuevo tipo
+            </button>
+          </div>
           <div className="type-tabs mb-4">
             {tipos.map(t=>(
               <button key={t.id} className={`type-tab ${form.tipo_id===t.id?"active":""}`}
-                onClick={()=>{set("tipo_id",t.id);set("categoria_id","");}}>
+                onClick={()=>{set("tipo_id",t.id);set("categoria_id","");set("catalogo_id","");}}>
                 <Ico name={t.icono} size={13}/> {t.nombre}
               </button>
             ))}
@@ -370,8 +535,14 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
           {form.tipo_id && (
             <div className="form-grid mb-4">
               <div className="field">
-                <label>Categoría <span className="req">*</span></label>
-                <select value={form.categoria_id} onChange={e=>set("categoria_id",e.target.value)}>
+                <div className="flex justify-between items-center">
+                  <label>Categoría <span className="req">*</span></label>
+                  <button type="button" onClick={()=>setShowNuevaCategoria(true)}
+                    style={{background:"none",border:"none",color:"var(--blue)",fontSize:11.5,cursor:"pointer",fontFamily:"var(--font-ui)"}}>
+                    ＋ Nueva categoría
+                  </button>
+                </div>
+                <select value={form.categoria_id} onChange={e=>{set("categoria_id",e.target.value);set("catalogo_id","");}}>
                   <option value="">— Selecciona —</option>
                   {catsFiltradas.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}
                 </select>
@@ -391,11 +562,23 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
 
           {form.categoria_id && <>
             <div className="section-label">Producto</div>
-            <div className="form-grid mb-4">
+            <div className="form-grid mb-2">
               <div className="field form-full">
                 <label>Nombre del producto <span className="req">*</span></label>
-                <input value={form.nombre_producto} onChange={e=>set("nombre_producto",e.target.value)}
-                  placeholder={esMed?"Ej: Paracetamol, Ibuprofeno...":"Ej: Gasas estériles 10x10cm"}/>
+                <input
+                  list={`productos-${form.categoria_id}`}
+                  value={form.nombre_producto}
+                  onChange={e=>handleSeleccionarProducto(e.target.value)}
+                  placeholder={esMed?"Escribe o elige: Paracetamol, Ibuprofeno...":"Escribe o elige de la lista..."}
+                />
+                <datalist id={`productos-${form.categoria_id}`}>
+                  {productosFiltrados.map(p=>(<option key={p.id} value={p.nombre}/>))}
+                </datalist>
+                <span className="hint">
+                  {form.catalogo_id
+                    ? "✓ Producto del catálogo — peso y volumen cargados automáticamente (puedes editarlos)"
+                    : "Producto nuevo — define su peso y volumen abajo (se guardará para la próxima vez)"}
+                </span>
               </div>
               {esMed && (
                 <div className="field">
@@ -419,7 +602,7 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
               )}
             </div>
 
-            <div className="section-label">Cantidad</div>
+            <div className="section-label" style={{marginTop:16}}>Cantidad</div>
             <div className="form-grid mb-3">
               <div className="field">
                 <label>Cantidad ({form.unidad}s) <span className="req">*</span></label>
@@ -444,12 +627,12 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
               </div>
             )}
 
-            <div className="section-label">Peso y Volumen</div>
+            <div className="section-label">Peso y Volumen {form.catalogo_id && <span style={{color:"var(--green)",fontWeight:400}}>· autocompletado</span>}</div>
             <div className="form-grid mb-4">
               <div className="field">
                 <label>Peso por {form.unidad} (kg)</label>
                 <input type="number" step="0.001" min="0" value={form.peso_unitario_kg}
-                  onChange={e=>set("peso_unitario_kg",e.target.value)} placeholder="0.050"/>
+                  onChange={e=>{set("peso_unitario_kg",e.target.value);setPesoEditadoManual(true);}} placeholder="0.050"/>
                 {form.peso_unitario_kg&&form.cantidad_total&&(
                   <span className="hint">Total: {(parseFloat(form.peso_unitario_kg)*parseInt(form.cantidad_total||0)).toFixed(2)} kg</span>
                 )}
@@ -457,7 +640,7 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
               <div className="field">
                 <label>Volumen por {form.unidad} (m³)</label>
                 <input type="number" step="0.000001" min="0" value={form.volumen_unitario_m3}
-                  onChange={e=>set("volumen_unitario_m3",e.target.value)} placeholder="0.000300"/>
+                  onChange={e=>{set("volumen_unitario_m3",e.target.value);setPesoEditadoManual(true);}} placeholder="0.000300"/>
               </div>
             </div>
 
@@ -488,12 +671,27 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, centroId }) {
           </button>
         </div>
       </div>
+
+      {showNuevoTipo && (
+        <ModalNuevoTipo
+          onClose={()=>setShowNuevoTipo(false)}
+          onCreated={async ()=>{ setShowNuevoTipo(false); if(onCatalogoChange) await onCatalogoChange(); }}
+        />
+      )}
+      {showNuevaCategoria && form.tipo_id && (
+        <ModalNuevaCategoria
+          onClose={()=>setShowNuevaCategoria(false)}
+          tipoId={form.tipo_id}
+          tipoNombre={tipoSel?.nombre || ""}
+          onCreated={async ()=>{ setShowNuevaCategoria(false); if(onCatalogoChange) await onCatalogoChange(); }}
+        />
+      )}
     </div>
   );
 }
 
 // ─── VISTAS ───────────────────────────────────────────────────────────────────
-function Dashboard({ centro, tipos, categorias }) {
+function Dashboard({ centro, tipos, categorias, catalogo, onCatalogoChange }) {
   const [donaciones, setDonaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -568,12 +766,12 @@ function Dashboard({ centro, tipos, categorias }) {
           </div>
         </div>
       </div>
-      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetch();}} tipos={tipos} categorias={categorias} centroId={centro.id}/>}
+      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetch();}} tipos={tipos} categorias={categorias} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange}/>}
     </div>
   );
 }
 
-function InventarioView({ centro, tipos, categorias }) {
+function InventarioView({ centro, tipos, categorias, catalogo, onCatalogoChange }) {
   const [donaciones, setDonaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroTipo, setFiltroTipo] = useState("all");
@@ -677,7 +875,7 @@ function InventarioView({ centro, tipos, categorias }) {
           )}
         </div>
       </div>
-      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetchAll();}} tipos={tipos} categorias={categorias} centroId={centro.id}/>}
+      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetchAll();}} tipos={tipos} categorias={categorias} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange}/>}
     </div>
   );
 }
@@ -994,7 +1192,7 @@ function AdminView({ usuario }) {
 }
 
 // ─── APP SHELL ────────────────────────────────────────────────────────────────
-function AppShell({ usuario, centro, tipos, categorias }) {
+function AppShell({ usuario, centro, tipos, categorias, catalogo, onCatalogoChange }) {
   const [vista, setVista] = useState("dashboard");
   const isAdmin = usuario?.rol==="admin_global";
   const logout = () => supabase.auth.signOut();
@@ -1039,8 +1237,8 @@ function AppShell({ usuario, centro, tipos, categorias }) {
         </div>
       </aside>
       <main className="main">
-        {vista==="dashboard"&&<Dashboard centro={centro} tipos={tipos} categorias={categorias}/>}
-        {vista==="inventario"&&<InventarioView centro={centro} tipos={tipos} categorias={categorias}/>}
+        {vista==="dashboard"&&<Dashboard centro={centro} tipos={tipos} categorias={categorias} catalogo={catalogo} onCatalogoChange={onCatalogoChange}/>}
+        {vista==="inventario"&&<InventarioView centro={centro} tipos={tipos} categorias={categorias} catalogo={catalogo} onCatalogoChange={onCatalogoChange}/>}
         {vista==="resumen-centro"&&<ResumenCentroView centro={centro} tipos={tipos}/>}
         {vista==="resumen-global"&&<ResumenGlobalView/>}
         {vista==="manifiesto"&&<ManifiestoView centro={centro}/>}
@@ -1057,7 +1255,19 @@ export default function AcopioVen() {
   const [centro, setCentro] = useState(null);
   const [tipos, setTipos] = useState([]);
   const [categorias, setCategorias] = useState([]);
+  const [catalogo, setCatalogo] = useState([]);
   const [booting, setBooting] = useState(true);
+
+  const recargarCatalogoCompleto = useCallback(async () => {
+    const [{data:t},{data:cat},{data:prod}] = await Promise.all([
+      supabase.from("tipos_producto").select("*").eq("activo",true).order("orden"),
+      supabase.from("categorias").select("*").eq("activo",true).order("orden"),
+      supabase.from("catalogo_productos").select("*").eq("activo",true).order("nombre"),
+    ]);
+    setTipos(t||[]);
+    setCategorias(cat||[]);
+    setCatalogo(prod||[]);
+  }, []);
 
   // Inyectar CSS global
   useEffect(()=>{
@@ -1086,15 +1296,10 @@ export default function AcopioVen() {
       } else if(usr?.rol==="admin_global"){
         setCentro({id:null,nombre:"Administración Global",estado:"aprobado"});
       }
-      const [{data:t},{data:cat}]=await Promise.all([
-        supabase.from("tipos_producto").select("*").eq("activo",true).order("orden"),
-        supabase.from("categorias").select("*").eq("activo",true).order("orden"),
-      ]);
-      setTipos(t||[]);
-      setCategorias(cat||[]);
+      await recargarCatalogoCompleto();
       setBooting(false);
     })();
-  },[session]);
+  },[session, recargarCatalogoCompleto]);
 
   if(session===undefined||booting){
     return (
@@ -1122,5 +1327,5 @@ export default function AcopioVen() {
     );
   }
 
-  return <AppShell usuario={usuario} centro={centro} tipos={tipos} categorias={categorias}/>;
+  return <AppShell usuario={usuario} centro={centro} tipos={tipos} categorias={categorias} catalogo={catalogo} onCatalogoChange={recargarCatalogoCompleto}/>;
 }
