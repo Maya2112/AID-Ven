@@ -227,7 +227,7 @@ function AuthView() {
       <div className="auth-card">
         <div className="auth-logo">
           <span className="flag">🇻🇪</span>
-          <h1>AidVen</h1>
+          <h1>AcopioVen</h1>
           <p>Control de donaciones · Ayuda Humanitaria</p>
         </div>
 
@@ -272,7 +272,7 @@ function AuthView() {
                     <div className="field"><label>Nombre del centro<span className="req">*</span></label><input value={form.centro_nombre} onChange={e=>set("centro_nombre",e.target.value)} required placeholder="Ej: Centro de Acopio Norte Cancún"/></div>
                     <div className="grid-2">
                       <div className="field"><label>Ciudad<span className="req">*</span></label><input value={form.ciudad} onChange={e=>set("ciudad",e.target.value)} required placeholder="Cancún"/></div>
-                      <div className="field"><label>País</label><input value={form.pais} onChange={e=>set("pais",e.target.value)}/></div>
+                      <div className="field"><label>País<span className="req" style={{visibility:"hidden"}}>*</span></label><input value={form.pais} onChange={e=>set("pais",e.target.value)}/></div>
                     </div>
                     <div className="field"><label>Teléfono de contacto</label><input value={form.contacto_telefono} onChange={e=>set("contacto_telefono",e.target.value)} placeholder="+52 998 000 0000"/></div>
                     <div className="alert alert-warning">⏳ Tu centro quedará <strong>pendiente</strong> hasta que el administrador lo apruebe.</div>
@@ -1013,7 +1013,7 @@ function AppShell({ usuario, centro, tipos, categorias }) {
       <aside className="sidebar">
         <div className="sidebar-logo">
           <div className="sidebar-flag">🇻🇪</div>
-          <h1>AidVen</h1>
+          <h1>AcopioVen</h1>
           <p>Ayuda Humanitaria</p>
         </div>
         <nav className="sidebar-nav">
@@ -1051,7 +1051,7 @@ function AppShell({ usuario, centro, tipos, categorias }) {
 }
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
-export default function AidVen() {
+export default function AcopioVen() {
   const [session, setSession] = useState(undefined);
   const [usuario, setUsuario] = useState(null);
   const [centro, setCentro] = useState(null);
@@ -1101,7 +1101,7 @@ export default function AidVen() {
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0f1f3d"}}>
         <div style={{textAlign:"center",color:"white"}}>
           <div style={{fontSize:48,marginBottom:16}}>🇻🇪</div>
-          <div style={{fontFamily:"system-ui",fontSize:15,opacity:.6}}>Cargando AidVen...</div>
+          <div style={{fontFamily:"system-ui",fontSize:15,opacity:.6}}>Cargando AcopioVen...</div>
         </div>
       </div>
     );
