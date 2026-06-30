@@ -533,50 +533,56 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
     }
     setError(""); setLoading(true);
 
-    const esFrasco = form.unidad === "frasco";
+    try {
+      const esFrasco = form.unidad === "frasco";
 
-    // Si el producto no existe en el catalogo, lo guardamos para futuras donaciones (peso autocompletado la proxima vez)
-    let catalogoId = form.catalogo_id || null;
-    if (!catalogoId) {
-      const { data: nuevoProd } = await supabase.from("catalogo_productos").insert({
+      // Si el producto no existe en el catalogo, lo guardamos para futuras donaciones (peso autocompletado la proxima vez)
+      let catalogoId = form.catalogo_id || null;
+      if (!catalogoId) {
+        const { data: nuevoProd, error: errCat } = await supabase.from("catalogo_productos").insert({
+          tipo_id: form.tipo_id,
+          categoria_id: form.categoria_id,
+          nombre: form.nombre_producto,
+          es_medicamento: esMed,
+          presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
+          unidad_base: form.unidad,
+          unidades_nivel2: form.unidades_nivel2 ? parseInt(form.unidades_nivel2) : null,
+          unidades_nivel3: form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null,
+          tipo_frasco: esFrasco ? (form.tipo_frasco||null) : null,
+          volumen_ml_frasco: esFrasco && form.tipo_frasco==="liquido" ? (parseFloat(form.volumen_ml_frasco)||null) : null,
+          peso_unitario_kg: form.peso_unitario_kg ? parseFloat(form.peso_unitario_kg) : 0,
+          es_predeterminado: false,
+        }).select("id").single();
+        // Si fallo crear el producto de catalogo (ej. nombre duplicado), no es fatal: seguimos sin catalogoId
+        if (nuevoProd) catalogoId = nuevoProd.id;
+      }
+
+      const { error: err } = await supabase.from("donaciones").insert({
+        centro_id: centroId,
         tipo_id: form.tipo_id,
         categoria_id: form.categoria_id,
-        nombre: form.nombre_producto,
-        es_medicamento: esMed,
+        catalogo_id: catalogoId,
+        nombre_producto: form.nombre_producto,
         presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
-        unidad_base: form.unidad,
+        unidad: form.unidad,
+        cantidad_total: parseInt(form.cantidad_total),
         unidades_nivel2: form.unidades_nivel2 ? parseInt(form.unidades_nivel2) : null,
-        unidades_nivel3: form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null,
+        unidades_nivel3: esFrasco && form.tipo_frasco==="solido" ? parseInt(form.unidades_nivel3)||null : (form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null),
         tipo_frasco: esFrasco ? (form.tipo_frasco||null) : null,
         volumen_ml_frasco: esFrasco && form.tipo_frasco==="liquido" ? (parseFloat(form.volumen_ml_frasco)||null) : null,
+        talla: form.talla||null,
         peso_unitario_kg: form.peso_unitario_kg ? parseFloat(form.peso_unitario_kg) : 0,
-        es_predeterminado: false,
-      }).select("id").single();
-      if (nuevoProd) catalogoId = nuevoProd.id;
+        estado: form.estado,
+        fecha_ingreso: form.fecha_ingreso,
+        observaciones: form.observaciones||null,
+      });
+      if (err) { setError(err.message); setLoading(false); return; }
+      if (onCatalogoChange) onCatalogoChange();
+      onSaved();
+    } catch (e) {
+      setError("No se pudo guardar: revisa tu conexión a internet e intenta de nuevo. Si el problema persiste, tus datos no se han perdido, solo no se han enviado todavía.");
+      setLoading(false);
     }
-
-    const { error:err } = await supabase.from("donaciones").insert({
-      centro_id: centroId,
-      tipo_id: form.tipo_id,
-      categoria_id: form.categoria_id,
-      catalogo_id: catalogoId,
-      nombre_producto: form.nombre_producto,
-      presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
-      unidad: form.unidad,
-      cantidad_total: parseInt(form.cantidad_total),
-      unidades_nivel2: form.unidades_nivel2 ? parseInt(form.unidades_nivel2) : null,
-      unidades_nivel3: esFrasco && form.tipo_frasco==="solido" ? parseInt(form.unidades_nivel3)||null : (form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null),
-      tipo_frasco: esFrasco ? (form.tipo_frasco||null) : null,
-      volumen_ml_frasco: esFrasco && form.tipo_frasco==="liquido" ? (parseFloat(form.volumen_ml_frasco)||null) : null,
-      talla: form.talla||null,
-      peso_unitario_kg: form.peso_unitario_kg ? parseFloat(form.peso_unitario_kg) : 0,
-      estado: form.estado,
-      fecha_ingreso: form.fecha_ingreso,
-      observaciones: form.observaciones||null,
-    });
-    if (err) { setError(err.message); setLoading(false); return; }
-    if (onCatalogoChange) onCatalogoChange();
-    onSaved();
   };
 
   return (
@@ -798,6 +804,18 @@ function Dashboard({ centro, tipos, categorias, tiposParaCaptura, categoriasPara
 
   useEffect(()=>{ fetch(); },[fetch]);
 
+  // Suscripcion en tiempo real: refleja cambios de otros voluntarios del mismo centro al instante.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`dashboard-centro-${centro.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "donaciones", filter: `centro_id=eq.${centro.id}` },
+        () => { fetch(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [centro.id, fetch]);
+
   const getNombre = (id, arr) => arr.find(a=>a.id===id)?.nombre||"—";
   const peso = donaciones.reduce((s,d)=>s+(parseFloat(d.peso_total_kg)||0),0);
   const listos = donaciones.filter(d=>d.estado==="listo_para_envio").length;
@@ -880,6 +898,19 @@ function InventarioView({ centro, tipos, categorias, tiposParaCaptura, categoria
   },[centro.id]);
 
   useEffect(()=>{ fetchAll(); },[fetchAll]);
+
+  // Suscripcion en tiempo real: si otro voluntario del mismo centro registra,
+  // edita o elimina una donacion desde otro dispositivo, esta vista se refresca sola.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`donaciones-centro-${centro.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "donaciones", filter: `centro_id=eq.${centro.id}` },
+        () => { fetchAll(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [centro.id, fetchAll]);
 
   const getNombre = (id,arr) => arr.find(a=>a.id===id)?.nombre||"—";
   const filtradas = donaciones.filter(d=>{
@@ -1160,14 +1191,19 @@ function ModalCaja({ onClose, onSaved, tipos, categorias, centroId, cajaExistent
       fecha_empaque: form.fecha_empaque,
       observaciones: form.observaciones || null,
     };
-    let err;
-    if (cajaExistente) {
-      ({ error: err } = await supabase.from("cajas_embalaje").update(payload).eq("id", cajaExistente.id));
-    } else {
-      ({ error: err } = await supabase.from("cajas_embalaje").insert(payload));
+    try {
+      let err;
+      if (cajaExistente) {
+        ({ error: err } = await supabase.from("cajas_embalaje").update(payload).eq("id", cajaExistente.id));
+      } else {
+        ({ error: err } = await supabase.from("cajas_embalaje").insert(payload));
+      }
+      if (err) { setError(err.message); setLoading(false); return; }
+      onSaved();
+    } catch (e) {
+      setError("No se pudo guardar: revisa tu conexión a internet e intenta de nuevo.");
+      setLoading(false);
     }
-    if (err) { setError(err.message); setLoading(false); return; }
-    onSaved();
   };
 
   return (
