@@ -149,15 +149,16 @@ const CSS = `
   .flex { display: flex; } .items-center { align-items: center; } .gap-2 { gap: 8px; } .gap-3 { gap: 12px; }
   .text-sm { font-size: 12.5px; } .text-muted { color: var(--slate-500); } .font-600 { font-weight: 600; }
   /* Topbar movil con boton hamburguesa */
-  .mobile-topbar { display: none; }
+  .mobile-topbar { display: none; width: 100%; box-sizing: border-box; order: -1; }
   .hamburger-btn { background: none; border: none; cursor: pointer; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
   .hamburger-btn span { display: block; width: 22px; height: 2px; background: var(--slate-700); border-radius: 1px; }
   .sidebar-overlay { display: none; }
 
   @media (max-width: 768px) {
+    .app { flex-direction: column; }
     .sidebar { transform: translateX(-100%); transition: transform .25s ease; }
     .sidebar.open { transform: translateX(0); }
-    .main { margin-left: 0; }
+    .main { margin-left: 0; width: 100%; }
     .form-grid, .form-grid-3, .grid-2 { grid-template-columns: 1fr; }
     .stats-grid { grid-template-columns: 1fr 1fr; }
     .content { padding: 16px; }
@@ -1683,8 +1684,18 @@ function AdminView({ usuario }) {
 function AppShell({ usuario, centro, tipos, categorias, tiposParaCaptura, categoriasParaCaptura, catalogo, onCatalogoChange }) {
   const [vista, setVista] = useState("dashboard");
   const [sidebarAbierto, setSidebarAbierto] = useState(false);
+  const [esMovil, setEsMovil] = useState(false);
   const isAdmin = usuario?.rol==="admin_global";
   const logout = () => supabase.auth.signOut();
+
+  // Deteccion robusta de movil via JS (no depende de que el media query CSS cargue a tiempo).
+  // Aplicamos estilos INLINE segun esto, que siempre tienen prioridad sobre el CSS externo.
+  useEffect(() => {
+    const checkSize = () => setEsMovil(window.innerWidth <= 768);
+    checkSize();
+    window.addEventListener("resize", checkSize);
+    return () => window.removeEventListener("resize", checkSize);
+  }, []);
 
   const nav = [
     {id:"dashboard",label:"Panel Principal",icon:"home"},
@@ -1699,18 +1710,28 @@ function AppShell({ usuario, centro, tipos, categorias, tiposParaCaptura, catego
   const irA = (id) => { setVista(id); setSidebarAbierto(false); };
   const tituloActual = nav.find(n=>n.id===vista)?.label || "AcopioVen";
 
+  // Estilos inline calculados en JS: garantizan el comportamiento correcto
+  // sin depender de que el media query CSS se aplique a tiempo o del todo.
+  const appStyle = esMovil ? { flexDirection: "column" } : {};
+  const sidebarStyle = esMovil
+    ? { transform: sidebarAbierto ? "translateX(0)" : "translateX(-100%)", transition: "transform .25s ease" }
+    : {};
+  const mainStyle = esMovil ? { marginLeft: 0, width: "100%" } : {};
+  const topbarStyle = { display: esMovil ? "flex" : "none" };
+  const overlayStyle = { display: (esMovil && sidebarAbierto) ? "block" : "none" };
+
   return (
-    <div className="app">
-      <div className={`mobile-topbar`}>
+    <div className="app" style={appStyle}>
+      <div className="mobile-topbar" style={topbarStyle}>
         <button className="hamburger-btn" onClick={()=>setSidebarAbierto(true)} aria-label="Abrir menú">
           <span/><span/><span/>
         </button>
         <div className="mobile-topbar-title">🇻🇪 {tituloActual}</div>
       </div>
 
-      <div className={`sidebar-overlay ${sidebarAbierto?"open":""}`} onClick={()=>setSidebarAbierto(false)}/>
+      <div className="sidebar-overlay" style={overlayStyle} onClick={()=>setSidebarAbierto(false)}/>
 
-      <aside className={`sidebar ${sidebarAbierto?"open":""}`}>
+      <aside className={`sidebar ${sidebarAbierto?"open":""}`} style={sidebarStyle}>
         <div className="sidebar-logo">
           <div className="sidebar-flag">🇻🇪</div>
           <h1>AcopioVen</h1>
@@ -1738,7 +1759,7 @@ function AppShell({ usuario, centro, tipos, categorias, tiposParaCaptura, catego
           <button className="btn-logout" onClick={logout}>⇒ Cerrar sesión</button>
         </div>
       </aside>
-      <main className="main">
+      <main className="main" style={mainStyle}>
         {vista==="dashboard"&&<Dashboard centro={centro} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={onCatalogoChange} esAdmin={isAdmin}/>}
         {vista==="inventario"&&<InventarioView centro={centro} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={onCatalogoChange} esAdmin={isAdmin}/>}
         {vista==="cajas"&&<CajasEmbalajeView centro={centro} tipos={tipos} categorias={categorias}/>}
