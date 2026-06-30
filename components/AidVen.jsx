@@ -24,7 +24,9 @@ const CSS = `
     --shadow: 0 1px 3px rgba(0,0,0,.08); --shadow-md: 0 4px 12px rgba(0,0,0,.10); --shadow-lg: 0 10px 30px rgba(0,0,0,.12);
     --font-ui: 'Inter', system-ui, sans-serif; --font-display: 'Space Grotesk', system-ui, sans-serif;
   }
-  body { font-family: var(--font-ui); background: var(--slate-50); color: var(--slate-900); min-height: 100vh; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { font-family: var(--font-ui); background: var(--slate-50); color: var(--slate-900); min-height: 100vh; overflow-x: hidden; max-width: 100vw; }
+  .app { overflow-x: hidden; max-width: 100vw; }
   .app { display: flex; min-height: 100vh; }
   .sidebar { width: 240px; background: var(--navy); color: white; display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; height: 100vh; z-index: 50; }
   .sidebar-logo { padding: 24px 20px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
@@ -46,8 +48,8 @@ const CSS = `
   .status-suspendido { background: var(--red); }
   .btn-logout { width: 100%; text-align: left; background: none; border: none; color: rgba(255,255,255,.45); font-size: 12.5px; cursor: pointer; padding: 6px 4px; display: flex; align-items: center; gap: 8px; font-family: var(--font-ui); }
   .btn-logout:hover { color: rgba(255,255,255,.75); }
-  .main { flex: 1; margin-left: 240px; display: flex; flex-direction: column; min-height: 100vh; }
-  .content { flex: 1; padding: 28px; }
+  .main { flex: 1; margin-left: 240px; display: flex; flex-direction: column; min-height: 100vh; min-width: 0; max-width: 100%; }
+  .content { flex: 1; padding: 28px; min-width: 0; max-width: 100%; box-sizing: border-box; }
   .card { background: white; border-radius: var(--radius); border: 1px solid var(--slate-200); box-shadow: var(--shadow); }
   .card-pad { padding: 20px 24px; }
   .card-header { padding: 16px 20px; border-bottom: 1px solid var(--slate-100); display: flex; align-items: center; justify-content: space-between; }
@@ -311,11 +313,12 @@ function AuthView() {
 }
 
 // ─── MODAL: NUEVO TIPO DE PRODUCTO ────────────────────────────────────────────
-function ModalNuevoTipo({ onClose, onCreated }) {
+function ModalNuevoTipo({ onClose, onCreated, esAdmin }) {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [creado, setCreado] = useState(false);
 
   const handleSave = async () => {
     if (!nombre.trim()) { setError("El nombre es obligatorio."); return; }
@@ -325,8 +328,28 @@ function ModalNuevoTipo({ onClose, onCreated }) {
       icono: "package", es_predeterminado: false,
     });
     if (err) { setError(err.message); setLoading(false); return; }
-    onCreated();
+    if (esAdmin) { onCreated(); return; }
+    setCreado(true); setLoading(false);
   };
+
+  if (creado) {
+    return (
+      <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+        <div className="modal" style={{maxWidth:440}}>
+          <div className="modal-header"><h2>Propuesta enviada</h2><button className="modal-close" onClick={onClose}>✕</button></div>
+          <div className="modal-body">
+            <div className="alert alert-success">
+              ✓ Ya puedes usar <strong>{nombre}</strong> para tus donaciones. Quedó en revisión por el administrador;
+              una vez aprobado será visible para todos los centros.
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-primary" onClick={onCreated}>Listo</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -338,7 +361,9 @@ function ModalNuevoTipo({ onClose, onCreated }) {
         <div className="modal-body">
           {error && <div className="alert alert-error mb-3">⚠️ {error}</div>}
           <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
-            Este tipo quedará disponible para todos los centros de acopio.
+            {esAdmin
+              ? "Este tipo quedará disponible inmediatamente para todos los centros de acopio."
+              : "Podrás usarlo de inmediato en tu centro. Quedará pendiente de aprobación para que se muestre también a los demás centros."}
           </div>
           <div className="field mb-3">
             <label>Nombre <span className="req">*</span></label>
@@ -362,12 +387,13 @@ function ModalNuevoTipo({ onClose, onCreated }) {
 }
 
 // ─── MODAL: NUEVA CATEGORÍA ────────────────────────────────────────────────────
-function ModalNuevaCategoria({ onClose, onCreated, tipoId, tipoNombre }) {
+function ModalNuevaCategoria({ onClose, onCreated, tipoId, tipoNombre, esAdmin }) {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [tieneTalla, setTieneTalla] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [creada, setCreada] = useState(false);
 
   const handleSave = async () => {
     if (!nombre.trim()) { setError("El nombre es obligatorio."); return; }
@@ -377,8 +403,28 @@ function ModalNuevaCategoria({ onClose, onCreated, tipoId, tipoNombre }) {
       tiene_campo_talla: tieneTalla, es_predeterminada: false,
     });
     if (err) { setError(err.message); setLoading(false); return; }
-    onCreated();
+    if (esAdmin) { onCreated(); return; }
+    setCreada(true); setLoading(false);
   };
+
+  if (creada) {
+    return (
+      <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+        <div className="modal" style={{maxWidth:440}}>
+          <div className="modal-header"><h2>Propuesta enviada</h2><button className="modal-close" onClick={onClose}>✕</button></div>
+          <div className="modal-body">
+            <div className="alert alert-success">
+              ✓ Ya puedes usar <strong>{nombre}</strong> dentro de {tipoNombre} para tus donaciones. Quedó en revisión
+              por el administrador; una vez aprobada será visible para todos los centros.
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-primary" onClick={onCreated}>Listo</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -390,7 +436,9 @@ function ModalNuevaCategoria({ onClose, onCreated, tipoId, tipoNombre }) {
         <div className="modal-body">
           {error && <div className="alert alert-error mb-3">⚠️ {error}</div>}
           <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
-            Esta categoría se agregará dentro de <strong>{tipoNombre}</strong> y quedará disponible para todos los centros.
+            {esAdmin
+              ? <>Esta categoría se agregará dentro de <strong>{tipoNombre}</strong> y quedará disponible inmediatamente para todos los centros.</>
+              : <>Esta categoría se agregará dentro de <strong>{tipoNombre}</strong>. Podrás usarla de inmediato; quedará pendiente de aprobación para mostrarse también a los demás centros.</>}
           </div>
           <div className="field mb-3">
             <label>Nombre <span className="req">*</span></label>
@@ -418,7 +466,7 @@ function ModalNuevaCategoria({ onClose, onCreated, tipoId, tipoNombre }) {
 }
 
 // ─── MODAL DONACIÓN ───────────────────────────────────────────────────────────
-function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId, onCatalogoChange }) {
+function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId, onCatalogoChange, esAdmin }) {
   const [form, setForm] = useState({
     tipo_id:"", categoria_id:"", catalogo_id:"", nombre_producto:"", presentacion_mg:"",
     unidad:"unidad", cantidad_total:"", unidades_nivel2:"", unidades_nivel3:"",
@@ -716,6 +764,7 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
       {showNuevoTipo && (
         <ModalNuevoTipo
           onClose={()=>setShowNuevoTipo(false)}
+          esAdmin={esAdmin}
           onCreated={async ()=>{ setShowNuevoTipo(false); if(onCatalogoChange) await onCatalogoChange(); }}
         />
       )}
@@ -724,6 +773,7 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
           onClose={()=>setShowNuevaCategoria(false)}
           tipoId={form.tipo_id}
           tipoNombre={tipoSel?.nombre || ""}
+          esAdmin={esAdmin}
           onCreated={async ()=>{ setShowNuevaCategoria(false); if(onCatalogoChange) await onCatalogoChange(); }}
         />
       )}
@@ -732,7 +782,7 @@ function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId
 }
 
 // ─── VISTAS ───────────────────────────────────────────────────────────────────
-function Dashboard({ centro, tipos, categorias, catalogo, onCatalogoChange }) {
+function Dashboard({ centro, tipos, categorias, tiposParaCaptura, categoriasParaCaptura, catalogo, onCatalogoChange, esAdmin }) {
   const [donaciones, setDonaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -807,12 +857,12 @@ function Dashboard({ centro, tipos, categorias, catalogo, onCatalogoChange }) {
           </div>
         </div>
       </div>
-      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetch();}} tipos={tipos} categorias={categorias} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange}/>}
+      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetch();}} tipos={tiposParaCaptura} categorias={categoriasParaCaptura} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange} esAdmin={esAdmin}/>}
     </div>
   );
 }
 
-function InventarioView({ centro, tipos, categorias, catalogo, onCatalogoChange }) {
+function InventarioView({ centro, tipos, categorias, tiposParaCaptura, categoriasParaCaptura, catalogo, onCatalogoChange, esAdmin }) {
   const [donaciones, setDonaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroTipo, setFiltroTipo] = useState("all");
@@ -916,7 +966,7 @@ function InventarioView({ centro, tipos, categorias, catalogo, onCatalogoChange 
           )}
         </div>
       </div>
-      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetchAll();}} tipos={tipos} categorias={categorias} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange}/>}
+      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetchAll();}} tipos={tiposParaCaptura} categorias={categoriasParaCaptura} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange} esAdmin={esAdmin}/>}
     </div>
   );
 }
@@ -1512,6 +1562,7 @@ function ManifiestoView({ centro }) {
 
 function AdminView({ usuario }) {
   const [centros, setCentros] = useState([]);
+  const [pendientesCatalogo, setPendientesCatalogo] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchCentros = async () => {
@@ -1520,11 +1571,21 @@ function AdminView({ usuario }) {
     setCentros(data||[]);
     setLoading(false);
   };
-  useEffect(()=>{ fetchCentros(); },[]);
+  const fetchPendientesCatalogo = async () => {
+    const { data } = await supabase.from("vista_moderacion_pendientes").select("*");
+    setPendientesCatalogo(data||[]);
+  };
+  useEffect(()=>{ fetchCentros(); fetchPendientesCatalogo(); },[]);
 
   const cambiarEstado = async (id,estado) => {
     await supabase.rpc("cambiar_estado_centro",{p_centro_id:id,p_estado:estado});
     fetchCentros();
+  };
+
+  const moderarItem = async (clase, id, estado) => {
+    if (clase === "tipo") await supabase.rpc("moderar_tipo_producto", {p_id:id, p_estado:estado});
+    else await supabase.rpc("moderar_categoria", {p_id:id, p_estado:estado});
+    fetchPendientesCatalogo();
   };
 
   if(usuario?.rol!=="admin_global") return (
@@ -1535,8 +1596,37 @@ function AdminView({ usuario }) {
 
   return (
     <div className="content">
-      <div className="page-header"><div className="page-header-text"><h2>Administración</h2><p>Gestión de centros de acopio</p></div></div>
+      <div className="page-header"><div className="page-header-text"><h2>Administración</h2><p>Gestión de centros de acopio y catálogo</p></div></div>
       {pendientes.length>0&&<div className="alert alert-warning mb-4">⏳ <strong>{pendientes.length}</strong> centro{pendientes.length>1?"s":""} pendiente{pendientes.length>1?"s":""} de aprobación.</div>}
+      {pendientesCatalogo.length>0&&<div className="alert alert-warning mb-4">🏷️ <strong>{pendientesCatalogo.length}</strong> tipo{pendientesCatalogo.length>1?"s":""}/categoría{pendientesCatalogo.length>1?"s":""} de producto pendiente{pendientesCatalogo.length>1?"s":""} de revisión.</div>}
+
+      <div className="card mb-4">
+        <div className="card-header"><h3>Tipos y Categorías Pendientes ({pendientesCatalogo.length})</h3></div>
+        <div className="table-wrap">
+          {pendientesCatalogo.length===0 ? <div className="empty-state" style={{padding:30}}><p className="text-muted">✓ No hay propuestas pendientes</p></div> : (
+            <table>
+              <thead><tr><th>Tipo</th><th>Nombre</th><th>Pertenece a</th><th>Descripción</th><th>Centro que lo propuso</th><th>Fecha</th><th>Acción</th></tr></thead>
+              <tbody>
+                {pendientesCatalogo.map(p=>(
+                  <tr key={`${p.clase}-${p.id}`}>
+                    <td><span className="badge badge-blue">{p.clase==="tipo"?"Tipo":"Categoría"}</span></td>
+                    <td style={{fontWeight:600}}>{p.nombre}</td>
+                    <td style={{fontSize:12}}>{p.tipo_padre_nombre||"—"}</td>
+                    <td style={{fontSize:12,maxWidth:220}}>{p.descripcion||"—"}</td>
+                    <td style={{fontSize:12}}>{p.centro_nombre||"—"}</td>
+                    <td style={{fontSize:12,whiteSpace:"nowrap"}}>{new Date(p.created_at).toLocaleDateString("es-MX")}</td>
+                    <td><div style={{display:"flex",gap:8}}>
+                      <button className="btn btn-success btn-sm" onClick={()=>moderarItem(p.clase,p.id,"aprobado")}>✓ Aprobar</button>
+                      <button className="btn btn-danger btn-sm" onClick={()=>moderarItem(p.clase,p.id,"rechazado")}>✕ Rechazar</button>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
       <div className="card mb-4">
         <div className="card-header"><h3>Pendientes de Aprobación ({pendientes.length})</h3></div>
         <div className="table-wrap">
@@ -1590,7 +1680,7 @@ function AdminView({ usuario }) {
 }
 
 // ─── APP SHELL ────────────────────────────────────────────────────────────────
-function AppShell({ usuario, centro, tipos, categorias, catalogo, onCatalogoChange }) {
+function AppShell({ usuario, centro, tipos, categorias, tiposParaCaptura, categoriasParaCaptura, catalogo, onCatalogoChange }) {
   const [vista, setVista] = useState("dashboard");
   const [sidebarAbierto, setSidebarAbierto] = useState(false);
   const isAdmin = usuario?.rol==="admin_global";
@@ -1649,8 +1739,8 @@ function AppShell({ usuario, centro, tipos, categorias, catalogo, onCatalogoChan
         </div>
       </aside>
       <main className="main">
-        {vista==="dashboard"&&<Dashboard centro={centro} tipos={tipos} categorias={categorias} catalogo={catalogo} onCatalogoChange={onCatalogoChange}/>}
-        {vista==="inventario"&&<InventarioView centro={centro} tipos={tipos} categorias={categorias} catalogo={catalogo} onCatalogoChange={onCatalogoChange}/>}
+        {vista==="dashboard"&&<Dashboard centro={centro} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={onCatalogoChange} esAdmin={isAdmin}/>}
+        {vista==="inventario"&&<InventarioView centro={centro} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={onCatalogoChange} esAdmin={isAdmin}/>}
         {vista==="cajas"&&<CajasEmbalajeView centro={centro} tipos={tipos} categorias={categorias}/>}
         {vista==="resumen-centro"&&<ResumenCentroView centro={centro} tipos={tipos}/>}
         {vista==="resumen-global"&&<ResumenGlobalView/>}
@@ -1677,10 +1767,17 @@ export default function AcopioVen() {
       supabase.from("categorias").select("*").eq("activo",true).order("orden"),
       supabase.from("catalogo_productos").select("*").eq("activo",true).order("nombre"),
     ]);
+    // tipos/categorias: incluye TODO lo visible segun RLS (aprobados + pendientes propios + rechazados en uso)
+    // esto es necesario para que Inventario/Dashboard sigan mostrando el nombre de donaciones existentes
     setTipos(t||[]);
     setCategorias(cat||[]);
     setCatalogo(prod||[]);
   }, []);
+
+  // Solo tipos/categorias APROBADOS pueden elegirse para registrar donaciones NUEVAS.
+  // Si algo fue rechazado, ya no se ofrece como opcion, aunque siga visible en lo ya registrado.
+  const tiposParaCaptura = tipos.filter(t => t.estado_moderacion === "aprobado");
+  const categoriasParaCaptura = categorias.filter(c => c.estado_moderacion === "aprobado");
 
   // Inyectar CSS global
   useEffect(()=>{
@@ -1740,5 +1837,5 @@ export default function AcopioVen() {
     );
   }
 
-  return <AppShell usuario={usuario} centro={centro} tipos={tipos} categorias={categorias} catalogo={catalogo} onCatalogoChange={recargarCatalogoCompleto}/>;
+  return <AppShell usuario={usuario} centro={centro} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={recargarCatalogoCompleto}/>;
 }
