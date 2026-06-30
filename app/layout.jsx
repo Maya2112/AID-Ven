@@ -1,6 +1,12 @@
 export const metadata = {
-  title: "AidVen — Control de Donaciones",
+  title: "AcopioVen — Control de Donaciones",
   description: "Sistema de control de donaciones para ayuda humanitaria Venezuela",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }) {
