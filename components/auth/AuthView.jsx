@@ -13,7 +13,8 @@ export default function AuthView() {
   const [form, setForm] = useState({
     email:"", password:"", nombre:"",
     centro_nombre:"", ciudad:"", pais:"México",
-    contacto_nombre:"", contacto_email:"", contacto_telefono:""
+    contacto_nombre:"", contacto_email:"", contacto_telefono:"",
+    codigo_invitacion:""
   });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
 
@@ -38,6 +39,7 @@ export default function AuthView() {
         p_contacto_nombre: form.contacto_nombre || form.nombre,
         p_contacto_email: form.contacto_email || form.email,
         p_contacto_telefono: form.contacto_telefono,
+        p_codigo_invitacion: form.codigo_invitacion.trim().toUpperCase(),
       });
       if (centroErr) {
         // La cuenta de inicio de sesion ya se creo, pero el centro no se pudo registrar.
@@ -56,8 +58,18 @@ export default function AuthView() {
     e.preventDefault();
     if (step===1) { setStep(2); return; }
     if (step===2) {
-      // Antes de crear la cuenta, verificamos si ya existe un centro con nombre parecido
       setError(""); setLoading(true);
+      // El código de invitación se valida antes de crear la cuenta para no dejar
+      // cuentas de auth huérfanas si resulta inválido, usado o expirado.
+      const { data: codigoValido, error: codigoErr } = await supabase.rpc("validar_codigo_invitacion", {
+        p_codigo: form.codigo_invitacion.trim().toUpperCase(),
+      });
+      if (codigoErr || !codigoValido) {
+        setError("El código de invitación no es válido, ya fue usado o expiró.");
+        setLoading(false);
+        return;
+      }
+      // Antes de crear la cuenta, verificamos si ya existe un centro con nombre parecido
       try {
         const { data: similares } = await supabase.rpc("buscar_centros_similares", { p_nombre: form.centro_nombre });
         if (similares && similares.length > 0) {
@@ -122,6 +134,12 @@ export default function AuthView() {
                   </>}
                   {step===2 && <>
                     <div className="alert alert-info">Paso 2 — Datos de tu Centro de Acopio</div>
+                    <div className="field">
+                      <label>Código de invitación<span className="req">*</span></label>
+                      <input value={form.codigo_invitacion} onChange={e=>set("codigo_invitacion",e.target.value.toUpperCase())}
+                        required placeholder="Ej: 7XK2QF9M" style={{textTransform:"uppercase",letterSpacing:1}}/>
+                      <span className="hint">Solicítalo al administrador de AcopioVen.</span>
+                    </div>
                     <div className="field"><label>Nombre del centro<span className="req">*</span></label><input value={form.centro_nombre} onChange={e=>set("centro_nombre",e.target.value)} required placeholder="Ej: Centro de Acopio Norte Cancún"/></div>
                     <div className="grid-2">
                       <div className="field"><label>Ciudad<span className="req">*</span></label><input value={form.ciudad} onChange={e=>set("ciudad",e.target.value)} required placeholder="Cancún"/></div>
