@@ -15,6 +15,7 @@ export default function AppShell({ usuario, centro, tipos, categorias, tiposPara
   const [sidebarAbierto, setSidebarAbierto] = useState(false);
   const [esMovil, setEsMovil] = useState(false);
   const isAdmin = usuario?.rol==="admin_global";
+  const isAdminCiudad = usuario?.rol==="admin_ciudad";
   const logout = () => supabase.auth.signOut();
 
   // Deteccion robusta de movil via JS (no depende de que el media query CSS cargue a tiempo).
@@ -33,7 +34,7 @@ export default function AppShell({ usuario, centro, tipos, categorias, tiposPara
     {id:"resumen-centro",label:"Resumen de mi Centro",icon:"chart"},
     {id:"resumen-global",label:"Resumen Global",icon:"globe"},
     {id:"manifiesto",label:"Manifiesto de Carga",icon:"truck"},
-    ...(isAdmin?[{id:"admin",label:"Administración",icon:"admin"}]:[]),
+    ...((isAdmin||isAdminCiudad)?[{id:"admin",label:"Administración",icon:"admin"}]:[]),
   ];
 
   const irA = (id) => { setVista(id); setSidebarAbierto(false); };

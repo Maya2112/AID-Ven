@@ -10,13 +10,29 @@ export default function AuthView() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [centrosSimilares, setCentrosSimilares] = useState([]);
+  const [codigoInfo, setCodigoInfo] = useState({ estado:"pendiente", ciudad:null }); // pendiente | validando | valido | invalido
   const [form, setForm] = useState({
     email:"", password:"", nombre:"",
-    centro_nombre:"", ciudad:"", pais:"México",
+    centro_nombre:"", pais:"México",
     contacto_nombre:"", contacto_email:"", contacto_telefono:"",
     codigo_invitacion:""
   });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  // Valida el código y resuelve la ciudad a la que quedará amarrado el centro
+  // (el registro ya no pide la ciudad como texto libre: la fija el código).
+  const validarCodigo = async () => {
+    const codigo = form.codigo_invitacion.trim().toUpperCase();
+    if (!codigo) { setCodigoInfo({ estado:"pendiente", ciudad:null }); return false; }
+    setCodigoInfo({ estado:"validando", ciudad:null });
+    const { data, error } = await supabase.rpc("validar_codigo_invitacion", { p_codigo: codigo }).single();
+    if (error || !data?.valido) {
+      setCodigoInfo({ estado:"invalido", ciudad:null });
+      return false;
+    }
+    setCodigoInfo({ estado:"valido", ciudad:data.ciudad });
+    return true;
+  };
 
   const handleLogin = async e => {
     e.preventDefault(); setError(""); setLoading(true);
@@ -35,7 +51,7 @@ export default function AuthView() {
       if (err) throw err;
       if (!data?.user?.id) throw new Error("No se pudo crear la cuenta.");
       const { error:centroErr } = await supabase.rpc("registrar_centro", {
-        p_nombre: form.centro_nombre, p_ciudad: form.ciudad, p_pais: form.pais,
+        p_nombre: form.centro_nombre, p_pais: form.pais,
         p_contacto_nombre: form.contacto_nombre || form.nombre,
         p_contacto_email: form.contacto_email || form.email,
         p_contacto_telefono: form.contacto_telefono,
@@ -60,11 +76,10 @@ export default function AuthView() {
     if (step===2) {
       setError(""); setLoading(true);
       // El código de invitación se valida antes de crear la cuenta para no dejar
-      // cuentas de auth huérfanas si resulta inválido, usado o expirado.
-      const { data: codigoValido, error: codigoErr } = await supabase.rpc("validar_codigo_invitacion", {
-        p_codigo: form.codigo_invitacion.trim().toUpperCase(),
-      });
-      if (codigoErr || !codigoValido) {
+      // cuentas de auth huérfanas si resulta inválido, usado o expirado. Se revalida
+      // aquí aunque ya se haya validado al salir del campo, por si cambió mientras tanto.
+      const codigoOk = await validarCodigo();
+      if (!codigoOk) {
         setError("El código de invitación no es válido, ya fue usado o expiró.");
         setLoading(false);
         return;
@@ -136,16 +151,20 @@ export default function AuthView() {
                     <div className="alert alert-info">Paso 2 — Datos de tu Centro de Acopio</div>
                     <div className="field">
                       <label>Código de invitación<span className="req">*</span></label>
-                      <input value={form.codigo_invitacion} onChange={e=>set("codigo_invitacion",e.target.value.toUpperCase())}
+                      <input value={form.codigo_invitacion}
+                        onChange={e=>{set("codigo_invitacion",e.target.value.toUpperCase());setCodigoInfo({estado:"pendiente",ciudad:null});}}
+                        onBlur={validarCodigo}
                         required placeholder="Ej: 7XK2QF9M" style={{textTransform:"uppercase",letterSpacing:1}}/>
-                      <span className="hint">Solicítalo al administrador de AcopioVen.</span>
+                      {codigoInfo.estado==="validando" && <span className="hint">Verificando código...</span>}
+                      {codigoInfo.estado==="valido" && <span className="hint" style={{color:"var(--green)"}}>✓ Código válido — tu centro se registrará en <strong>{codigoInfo.ciudad}</strong>.</span>}
+                      {codigoInfo.estado==="invalido" && <span className="hint" style={{color:"var(--red)"}}>✕ Código inválido, usado o expirado.</span>}
+                      {codigoInfo.estado==="pendiente" && <span className="hint">Solicítalo al administrador de tu ciudad.</span>}
                     </div>
                     <div className="field"><label>Nombre del centro<span className="req">*</span></label><input value={form.centro_nombre} onChange={e=>set("centro_nombre",e.target.value)} required placeholder="Ej: Centro de Acopio Norte Cancún"/></div>
                     <div className="grid-2">
-                      <div className="field"><label>Ciudad<span className="req">*</span></label><input value={form.ciudad} onChange={e=>set("ciudad",e.target.value)} required placeholder="Cancún"/></div>
-                      <div className="field"><label>País<span className="req" style={{visibility:"hidden"}}>*</span></label><input value={form.pais} onChange={e=>set("pais",e.target.value)}/></div>
+                      <div className="field"><label>País</label><input value={form.pais} onChange={e=>set("pais",e.target.value)}/></div>
+                      <div className="field"><label>Teléfono de contacto</label><input value={form.contacto_telefono} onChange={e=>set("contacto_telefono",e.target.value)} placeholder="+52 998 000 0000"/></div>
                     </div>
-                    <div className="field"><label>Teléfono de contacto</label><input value={form.contacto_telefono} onChange={e=>set("contacto_telefono",e.target.value)} placeholder="+52 998 000 0000"/></div>
                     <div className="alert alert-warning">⏳ Tu centro quedará <strong>pendiente</strong> hasta que el administrador lo apruebe.</div>
                   </>}
                   {step===3 && <>

@@ -95,6 +95,9 @@ export default function AcopioVen() {
       // El admin global no pertenece a un centro específico,
       // pero necesita un objeto centro para que AppShell funcione.
       setCentro({ id: null, nombre: "Administración Global", estado: "aprobado" });
+    } else if (usr?.rol === "admin_ciudad") {
+      // Igual que admin_global: un admin_ciudad puede no tener centro propio.
+      setCentro({ id: null, nombre: `Administración · ${usr.ciudad_asignada}`, estado: "aprobado" });
     }
 
     await recargarCatalogoCompleto();
