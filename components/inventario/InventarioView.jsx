@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import ModalDonacion from "./ModalDonacion";
+import ModalAsignarCaja from "./ModalAsignarCaja";
 
 export default function InventarioView({ centro, tipos, categorias, tiposParaCaptura, categoriasParaCaptura, catalogo, onCatalogoChange, esAdmin }) {
   const [donaciones, setDonaciones] = useState([]);
@@ -10,12 +11,13 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
   const [filtroEstado, setFiltroEstado] = useState("all");
   const [busqueda, setBusqueda] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [asignandoCaja, setAsignandoCaja] = useState(null);
   const [error, setError] = useState("");
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from("donaciones")
-      .select("*").eq("centro_id",centro.id).order("fecha_ingreso",{ascending:false});
+      .select("*, caja:cajas_embalaje(numero_caja)").eq("centro_id",centro.id).order("fecha_ingreso",{ascending:false});
     setDonaciones(data||[]);
     setLoading(false);
   },[centro.id]);
@@ -95,7 +97,7 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
           : filtradas.length===0 ? <div className="empty-state"><h3>Sin resultados</h3><p>Ajusta los filtros para ver registros.</p></div>
           : (
             <table>
-              <thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Producto</th><th>Conc.</th><th>Unidad/Talla</th><th>Cant.</th><th>Uds.Mín.</th><th>Peso(kg)</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Producto</th><th>Conc.</th><th>Unidad/Talla</th><th>Cant.</th><th>Uds.Mín.</th><th>Peso(kg)</th><th>Caja</th><th>Estado</th><th></th></tr></thead>
               <tbody>
                 {filtradas.map(d=>(
                   <tr key={d.id}>
@@ -108,6 +110,11 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
                     <td style={{fontWeight:600}}>{d.cantidad_total?.toLocaleString()}</td>
                     <td style={{fontSize:12}}>{d.total_unidades_minimas>d.cantidad_total?d.total_unidades_minimas?.toLocaleString():"—"}</td>
                     <td style={{fontSize:12}}>{parseFloat(d.peso_total_kg||0).toFixed(2)}</td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={()=>setAsignandoCaja(d)}>
+                        {d.caja?.numero_caja || "＋ asignar"}
+                      </button>
+                    </td>
                     <td>
                       <select value={d.estado} onChange={e=>cambiarEstado(d.id,e.target.value)}
                         style={{fontSize:11,padding:"3px 6px",border:"1px solid var(--slate-200)",borderRadius:4,cursor:"pointer"}}>
@@ -127,6 +134,14 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
         </div>
       </div>
       {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetchAll();}} tipos={tiposParaCaptura} categorias={categoriasParaCaptura} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange} esAdmin={esAdmin}/>}
+      {asignandoCaja&&(
+        <ModalAsignarCaja
+          donacion={asignandoCaja}
+          centroId={centro.id}
+          onClose={()=>setAsignandoCaja(null)}
+          onSaved={()=>{setAsignandoCaja(null);fetchAll();}}
+        />
+      )}
     </div>
   );
 }

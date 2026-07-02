@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { buscarOCrearCaja } from "@/lib/cajas";
 import Tooltip from "@/components/ui/Tooltip";
 import Ico from "@/components/ui/Ico";
 import ModalNuevoTipo from "./ModalNuevoTipo";
@@ -11,7 +12,7 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
     tipo_id:"", categoria_id:"", catalogo_id:"", nombre_producto:"", presentacion_mg:"",
     unidad:"unidad", cantidad_total:"", unidades_nivel2:"", unidades_nivel3:"",
     tipo_frasco:"", volumen_ml_frasco:"",
-    talla:"", peso_unitario_kg:"",
+    talla:"", peso_unitario_kg:"", numero_caja:"",
     estado:"recibido", fecha_ingreso:new Date().toISOString().split("T")[0], observaciones:""
   });
   const [loading, setLoading] = useState(false);
@@ -98,11 +99,19 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
         if (nuevoProd) catalogoId = nuevoProd.id;
       }
 
+      // Si se indicó número de caja: se busca (o se crea) la caja de embalaje
+      // correspondiente para que la donación quede vinculada a ella.
+      const { cajaId, error: errCaja } = await buscarOCrearCaja({
+        centroId, numeroCaja: form.numero_caja, tipoId: form.tipo_id, categoriaId: form.categoria_id,
+      });
+      if (errCaja) { setError("No se pudo asociar la caja: " + errCaja.message); setLoading(false); return; }
+
       const { error: err } = await supabase.from("donaciones").insert({
         centro_id: centroId,
         tipo_id: form.tipo_id,
         categoria_id: form.categoria_id,
         catalogo_id: catalogoId,
+        caja_id: cajaId,
         nombre_producto: form.nombre_producto,
         presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
         unidad: form.unidad,
@@ -278,6 +287,18 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
                 {form.peso_unitario_kg&&form.cantidad_total&&(
                   <span className="hint">Total: {(parseFloat(form.peso_unitario_kg)*parseInt(form.cantidad_total||0)).toFixed(2)} kg</span>
                 )}
+              </div>
+            </div>
+
+            <div className="section-label">Empaque (opcional)</div>
+            <div className="form-grid mb-4">
+              <div className="field">
+                <label>Número/código de caja</label>
+                <input value={form.numero_caja} onChange={e=>set("numero_caja",e.target.value)} placeholder="Ej: CAJA-01"/>
+                <span className="hint">
+                  Si ya guardaste esta donación en una caja física, escribe su número — si
+                  es nuevo se crea la caja automáticamente; si ya existe, la donación se suma a ella.
+                </span>
               </div>
             </div>
 

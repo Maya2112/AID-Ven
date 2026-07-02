@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { supabase } from "@/lib/supabase";
 import ModalCaja from "./ModalCaja";
+import EstadoBadge from "@/components/ui/EstadoBadge";
 
 export default function CajasEmbalajeView({ centro, tipos, categorias }) {
   const [cajas, setCajas] = useState([]);
@@ -10,6 +11,19 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
   const [editando, setEditando] = useState(null);
   const [filtroTipo, setFiltroTipo] = useState("all");
   const [error, setError] = useState("");
+  const [expandida, setExpandida] = useState(null);
+  const [contenidoPorCaja, setContenidoPorCaja] = useState({});
+
+  const cargarContenidoCaja = async (cajaId) => {
+    const { data } = await supabase.from("donaciones").select("*").eq("caja_id", cajaId).order("fecha_ingreso");
+    setContenidoPorCaja(prev => ({ ...prev, [cajaId]: data || [] }));
+  };
+
+  const toggleExpandir = (cajaId) => {
+    if (expandida === cajaId) { setExpandida(null); return; }
+    setExpandida(cajaId);
+    if (!contenidoPorCaja[cajaId]) cargarContenidoCaja(cajaId);
+  };
 
   const fetchCajas = useCallback(async () => {
     setLoading(true);
@@ -110,14 +124,23 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
             <table>
               <thead>
                 <tr>
-                  <th>Caja</th><th>Tipo</th><th>Categoría</th><th>Contenido</th>
+                  <th></th><th>Caja</th><th>Tipo</th><th>Categoría</th><th>Contenido</th>
                   <th>Dimensiones (cm)</th><th>Volumen (m³)</th><th>Peso (kg)</th>
                   <th>Fecha</th><th>Estado</th><th></th>
                 </tr>
               </thead>
               <tbody>
-                {filtradas.map(c=>(
-                  <tr key={c.id}>
+                {filtradas.map(c=>{
+                  const abierta = expandida === c.id;
+                  const contenido = contenidoPorCaja[c.id];
+                  return (
+                  <Fragment key={c.id}>
+                  <tr>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={()=>toggleExpandir(c.id)} title="Ver contenido">
+                        {abierta ? "▼" : "▶"}
+                      </button>
+                    </td>
                     <td style={{fontWeight:600}}>{c.numero_caja || "—"}</td>
                     <td style={{fontSize:12}}>{getNombre(c.tipo_id, tipos)}</td>
                     <td style={{fontSize:12}}>{getNombre(c.categoria_id, categorias)}</td>
@@ -126,7 +149,11 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
                       {c.largo_cm&&c.ancho_cm&&c.alto_cm ? `${c.largo_cm}×${c.ancho_cm}×${c.alto_cm}` : "—"}
                     </td>
                     <td style={{fontSize:12}}>{c.volumen_m3 ? parseFloat(c.volumen_m3).toFixed(5) : "—"}</td>
-                    <td style={{fontWeight:600}}>{parseFloat(c.peso_kg).toFixed(2)}</td>
+                    <td style={{fontWeight:600}}>
+                      {c.peso_kg==null ? "—" : parseFloat(c.peso_kg).toFixed(2)}
+                      {c.peso_auto && c.peso_kg!=null && <span className="badge badge-blue" style={{fontSize:9,marginLeft:5,verticalAlign:"middle"}}>auto</span>}
+                      {c.peso_desactualizado && <span className="badge badge-amber" style={{fontSize:9,marginLeft:5,verticalAlign:"middle"}} title="El contenido cambió después del último peso medido — verifica en báscula">⚠️ verificar</span>}
+                    </td>
                     <td style={{fontSize:12,whiteSpace:"nowrap"}}>{c.fecha_empaque}</td>
                     <td>
                       <select value={c.estado} onChange={e=>cambiarEstado(c.id,e.target.value)}
@@ -143,7 +170,44 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  {abierta && (
+                    <tr>
+                      <td colSpan={10} style={{background:"var(--slate-50)",padding:"10px 16px"}}>
+                        {!contenido ? (
+                          <p className="hint">Cargando contenido...</p>
+                        ) : contenido.length===0 ? (
+                          <p className="hint">Esta caja no tiene donaciones vinculadas todavía.</p>
+                        ) : (
+                          <table>
+                            <thead><tr><th>Producto</th><th>Presentación</th><th>Unidad</th><th>Cant.</th><th>Peso(kg)</th><th>Estado</th></tr></thead>
+                            <tbody>
+                              {contenido.map(d=>(
+                                <tr key={d.id}>
+                                  <td style={{fontSize:12,fontWeight:500}}>{getNombre(d.tipo_id,tipos)} · {d.nombre_producto}</td>
+                                  <td style={{fontSize:12}}>{d.presentacion_mg||"—"}</td>
+                                  <td style={{fontSize:12}}>{d.unidad}{d.talla?` · ${d.talla}`:""}</td>
+                                  <td style={{fontSize:12}}>{d.cantidad_total?.toLocaleString()}</td>
+                                  <td style={{fontSize:12}}>{parseFloat(d.peso_total_kg||0).toFixed(2)}</td>
+                                  <td><EstadoBadge estado={d.estado}/></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{fontWeight:700}}>
+                                <td colSpan={3} style={{textAlign:"right",fontSize:11.5,paddingRight:10}}>Totales:</td>
+                                <td style={{fontSize:12}}>{contenido.reduce((s,d)=>s+(d.cantidad_total||0),0).toLocaleString()}</td>
+                                <td style={{fontSize:12}}>{contenido.reduce((s,d)=>s+(parseFloat(d.peso_total_kg)||0),0).toFixed(2)}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -153,7 +217,15 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
       {showModal && (
         <ModalCaja
           onClose={()=>{setShowModal(false);setEditando(null);}}
-          onSaved={()=>{setShowModal(false);setEditando(null);fetchCajas();}}
+          onSaved={()=>{
+            // El contenido pudo cambiar (donaciones agregadas/quitadas): se refresca el cache
+            // si esa caja está siendo previsualizada, o simplemente se descarta si no.
+            if (editando) {
+              if (expandida === editando.id) cargarContenidoCaja(editando.id);
+              else setContenidoPorCaja(prev => { const next = {...prev}; delete next[editando.id]; return next; });
+            }
+            setShowModal(false);setEditando(null);fetchCajas();
+          }}
           tipos={tipos} categorias={categorias} centroId={centro.id}
           cajaExistente={editando}
         />
