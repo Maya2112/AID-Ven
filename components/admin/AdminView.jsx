@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 
@@ -14,31 +14,31 @@ export default function AdminView({ usuario }) {
   const [codigoNuevo, setCodigoNuevo] = useState(null);
   const [error, setError] = useState("");
 
-  const fetchCentros = async () => {
+  const fetchCentros = useCallback(async () => {
     setLoading(true);
     const { data, error: err } = await supabase.from("centros_acopio").select("*").order("created_at",{ascending:false});
     if (err) setError("No se pudieron cargar los centros: " + err.message);
     else setCentros(data||[]);
     setLoading(false);
-  };
-  const fetchPendientesCatalogo = async () => {
+  }, []);
+  const fetchPendientesCatalogo = useCallback(async () => {
     const { data, error: err } = await supabase.from("vista_moderacion_pendientes").select("*");
     if (err) setError("No se pudieron cargar las propuestas pendientes: " + err.message);
     else setPendientesCatalogo(data||[]);
-  };
-  const fetchDuplicados = async () => {
+  }, []);
+  const fetchDuplicados = useCallback(async () => {
     const { data, error: err } = await supabase.rpc("admin_detectar_centros_duplicados");
     if (err) setError("No se pudieron detectar duplicados: " + err.message);
     else setDuplicados(data||[]);
-  };
-  const fetchCodigos = async () => {
+  }, []);
+  const fetchCodigos = useCallback(async () => {
     const { data, error: err } = await supabase.from("codigos_invitacion")
       .select("*, centro:centros_acopio(nombre)")
       .order("created_at",{ascending:false});
     if (err) setError("No se pudieron cargar los códigos de invitación: " + err.message);
     else setCodigos(data||[]);
-  };
-  useEffect(()=>{ fetchCentros(); fetchPendientesCatalogo(); fetchDuplicados(); fetchCodigos(); },[]);
+  }, []);
+  useEffect(()=>{ fetchCentros(); fetchPendientesCatalogo(); fetchDuplicados(); fetchCodigos(); },[fetchCentros, fetchPendientesCatalogo, fetchDuplicados, fetchCodigos]);
 
   const cambiarEstado = async (id,estado) => {
     const { error: err } = await supabase.rpc("cambiar_estado_centro",{p_centro_id:id,p_estado:estado});
@@ -141,8 +141,8 @@ export default function AdminView({ usuario }) {
             <table>
               <thead><tr><th>Centro A</th><th>Centro B</th><th>Similitud</th><th>Acción</th></tr></thead>
               <tbody>
-                {duplicados.map((d,i)=>(
-                  <tr key={i}>
+                {duplicados.map((d)=>(
+                  <tr key={`${d.id_a}-${d.id_b}`}>
                     <td style={{fontWeight:600}}>{d.nombre_a}</td>
                     <td style={{fontWeight:600}}>{d.nombre_b}</td>
                     <td><span className="badge badge-amber">{Math.round(d.similitud*100)}%</span></td>
@@ -164,7 +164,7 @@ export default function AdminView({ usuario }) {
             </table>
           </div>
           <div style={{padding:"10px 20px",fontSize:11.5,color:"var(--slate-500)"}}>
-            "Fusionar A → B" mueve todas las donaciones y cajas de A hacia B, y suspende A. Revisa bien antes de confirmar.
+            &ldquo;Fusionar A → B&rdquo; mueve todas las donaciones y cajas de A hacia B, y suspende A. Revisa bien antes de confirmar.
           </div>
         </div>
       )}

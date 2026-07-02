@@ -60,7 +60,7 @@ export default function ManifiestoView({ centro, esAdmin }) {
     const incluyeCentro = alcance === "global";
     if (modo === "estimado") {
       headers=[...(incluyeCentro?["Centro"]:[]),"Tipo","Categoría","Producto","Presentación","Unidad","Talla","Cantidad","Uds.Mín.","Peso Unit.(kg)","Peso Total(kg)","Vol.Total(m³)","Estado","Fecha","Observaciones"];
-      rows=filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.presentacion_mg||"",d.unidad,d.talla||"",d.cantidad_total,d.total_unidades_minimas||"",d.peso_unitario_kg,d.peso_total_kg,d.volumen_total_m3,d.estado,d.fecha_ingreso,d.observaciones||""]);
+      rows=filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.presentacion_mg||"",d.unidad,d.talla||"",d.cantidad_total,d.total_unidades_minimas||"",d.peso_unitario_kg??"",d.peso_total_kg??"",d.volumen_total_m3??"",d.estado,d.fecha_ingreso,d.observaciones||""]);
     } else {
       headers=[...(incluyeCentro?["Centro"]:[]),"Caja","Tipo","Categoría","Contenido","Largo(cm)","Ancho(cm)","Alto(cm)","Volumen(m³)","Peso(kg)","Estado","Fecha Empaque","Observaciones"];
       rows=filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.numero_caja||"",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"",d.largo_cm||"",d.ancho_cm||"",d.alto_cm||"",d.volumen_m3||"",d.peso_kg,d.estado,d.fecha_empaque,d.observaciones||""]);

@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import EstadoBadge from "@/components/ui/EstadoBadge";
 import ModalDonacion from "./ModalDonacion";
 
 export default function InventarioView({ centro, tipos, categorias, tiposParaCaptura, categoriasParaCaptura, catalogo, onCatalogoChange, esAdmin }) {

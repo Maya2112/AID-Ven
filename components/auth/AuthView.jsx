@@ -150,7 +150,7 @@ export default function AuthView() {
                   </>}
                   {step===3 && <>
                     <div className="alert alert-warning">
-                      ⚠️ Encontramos {centrosSimilares.length===1?"un centro":"centros"} ya registrado{centrosSimilares.length===1?"":"s"} con nombre parecido a <strong>"{form.centro_nombre}"</strong>.
+                      ⚠️ Encontramos {centrosSimilares.length===1?"un centro":"centros"} ya registrado{centrosSimilares.length===1?"":"s"} con nombre parecido a <strong>&ldquo;{form.centro_nombre}&rdquo;</strong>.
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:8}}>
                       {centrosSimilares.map(c=>(

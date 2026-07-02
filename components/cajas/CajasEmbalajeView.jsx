@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import EstadoBadge from "@/components/ui/EstadoBadge";
 import ModalCaja from "./ModalCaja";
 
 export default function CajasEmbalajeView({ centro, tipos, categorias }) {

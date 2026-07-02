@@ -10,7 +10,7 @@ export default function Dashboard({ centro, tipos, categorias, tiposParaCaptura,
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
 
-  const fetch = useCallback(async () => {
+  const fetchDonaciones = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from("donaciones")
       .select("*").eq("centro_id",centro.id).order("created_at",{ascending:false}).limit(10);
@@ -18,7 +18,7 @@ export default function Dashboard({ centro, tipos, categorias, tiposParaCaptura,
     setLoading(false);
   },[centro.id]);
 
-  useEffect(()=>{ fetch(); },[fetch]);
+  useEffect(()=>{ fetchDonaciones(); },[fetchDonaciones]);
 
   // Suscripcion en tiempo real: refleja cambios de otros voluntarios del mismo centro al instante.
   useEffect(() => {
@@ -26,11 +26,11 @@ export default function Dashboard({ centro, tipos, categorias, tiposParaCaptura,
       .channel(`dashboard-centro-${centro.id}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "donaciones", filter: `centro_id=eq.${centro.id}` },
-        () => { fetch(); }
+        () => { fetchDonaciones(); }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [centro.id, fetch]);
+  }, [centro.id, fetchDonaciones]);
 
   const getNombre = (id, arr) => arr.find(a=>a.id===id)?.nombre||"—";
   const peso = donaciones.reduce((s,d)=>s+(parseFloat(d.peso_total_kg)||0),0);
@@ -67,7 +67,7 @@ export default function Dashboard({ centro, tipos, categorias, tiposParaCaptura,
               <div className="empty-state">
                 <div style={{fontSize:48}}>📦</div>
                 <h3>Sin donaciones aún</h3>
-                <p>Usa "Nueva Donación" para empezar a registrar los insumos que llegan.</p>
+                <p>Usa &ldquo;Nueva Donación&rdquo; para empezar a registrar los insumos que llegan.</p>
               </div>
             ) : (
               <table>
@@ -92,7 +92,7 @@ export default function Dashboard({ centro, tipos, categorias, tiposParaCaptura,
           </div>
         </div>
       </div>
-      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetch();}} tipos={tiposParaCaptura} categorias={categoriasParaCaptura} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange} esAdmin={esAdmin}/>}
+      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetchDonaciones();}} tipos={tiposParaCaptura} categorias={categoriasParaCaptura} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange} esAdmin={esAdmin}/>}
     </div>
   );
 }
