@@ -54,7 +54,6 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
         volumen_ml_frasco: match.volumen_ml_frasco ? String(match.volumen_ml_frasco) : f.volumen_ml_frasco,
         peso_unitario_kg: match.peso_unitario_kg ? String(match.peso_unitario_kg) : f.peso_unitario_kg,
       }));
-      setPesoEditadoManual(false);
     } else {
       // Producto nuevo, no en catalogo: limpiar catalogo_id pero dejar peso editable
       set("catalogo_id", "");
@@ -271,7 +270,7 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
               <div className="field">
                 <label>Peso por {form.unidad} (kg)</label>
                 <input type="number" step="0.001" min="0" value={form.peso_unitario_kg}
-                  onChange={e=>{set("peso_unitario_kg",e.target.value);setPesoEditadoManual(true);}} placeholder="0.050 (opcional)"/>
+                  onChange={e=>set("peso_unitario_kg",e.target.value)} placeholder="0.050 (opcional)"/>
                 {form.peso_unitario_kg&&form.cantidad_total&&(
                   <span className="hint">Total: {(parseFloat(form.peso_unitario_kg)*parseInt(form.cantidad_total||0)).toFixed(2)} kg</span>
                 )}
