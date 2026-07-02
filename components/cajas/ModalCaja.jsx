@@ -34,6 +34,10 @@ export default function ModalCaja({ onClose, onSaved, tipos, categorias, centroI
     if (!form.tipo_id || !form.categoria_id || !form.peso_kg) {
       setError("Completa: Tipo, Categoría y Peso de la caja."); return;
     }
+    const pesoNum = parseFloat(form.peso_kg);
+    if (isNaN(pesoNum) || pesoNum <= 0 || pesoNum > 500) {
+      setError("El peso de la caja debe ser un número mayor a 0 y menor o igual a 500 kg."); return;
+    }
     setError(""); setLoading(true);
     const payload = {
       centro_id: centroId,
@@ -43,7 +47,7 @@ export default function ModalCaja({ onClose, onSaved, tipos, categorias, centroI
       largo_cm: form.largo_cm ? parseFloat(form.largo_cm) : null,
       ancho_cm: form.ancho_cm ? parseFloat(form.ancho_cm) : null,
       alto_cm: form.alto_cm ? parseFloat(form.alto_cm) : null,
-      peso_kg: parseFloat(form.peso_kg),
+      peso_kg: pesoNum,
       contenido_resumen: form.contenido_resumen || null,
       estado: form.estado,
       fecha_empaque: form.fecha_empaque,

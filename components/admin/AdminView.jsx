@@ -12,37 +12,45 @@ export default function AdminView({ usuario }) {
   const [fusionando, setFusionando] = useState(null);
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
   const [codigoNuevo, setCodigoNuevo] = useState(null);
+  const [error, setError] = useState("");
 
   const fetchCentros = async () => {
     setLoading(true);
-    const { data } = await supabase.from("centros_acopio").select("*").order("created_at",{ascending:false});
-    setCentros(data||[]);
+    const { data, error: err } = await supabase.from("centros_acopio").select("*").order("created_at",{ascending:false});
+    if (err) setError("No se pudieron cargar los centros: " + err.message);
+    else setCentros(data||[]);
     setLoading(false);
   };
   const fetchPendientesCatalogo = async () => {
-    const { data } = await supabase.from("vista_moderacion_pendientes").select("*");
-    setPendientesCatalogo(data||[]);
+    const { data, error: err } = await supabase.from("vista_moderacion_pendientes").select("*");
+    if (err) setError("No se pudieron cargar las propuestas pendientes: " + err.message);
+    else setPendientesCatalogo(data||[]);
   };
   const fetchDuplicados = async () => {
-    const { data } = await supabase.rpc("admin_detectar_centros_duplicados");
-    setDuplicados(data||[]);
+    const { data, error: err } = await supabase.rpc("admin_detectar_centros_duplicados");
+    if (err) setError("No se pudieron detectar duplicados: " + err.message);
+    else setDuplicados(data||[]);
   };
   const fetchCodigos = async () => {
-    const { data } = await supabase.from("codigos_invitacion")
+    const { data, error: err } = await supabase.from("codigos_invitacion")
       .select("*, centro:centros_acopio(nombre)")
       .order("created_at",{ascending:false});
-    setCodigos(data||[]);
+    if (err) setError("No se pudieron cargar los códigos de invitación: " + err.message);
+    else setCodigos(data||[]);
   };
   useEffect(()=>{ fetchCentros(); fetchPendientesCatalogo(); fetchDuplicados(); fetchCodigos(); },[]);
 
   const cambiarEstado = async (id,estado) => {
-    await supabase.rpc("cambiar_estado_centro",{p_centro_id:id,p_estado:estado});
+    const { error: err } = await supabase.rpc("cambiar_estado_centro",{p_centro_id:id,p_estado:estado});
+    if (err) { alert("No se pudo cambiar el estado del centro: " + err.message); return; }
     fetchCentros();
   };
 
   const moderarItem = async (clase, id, estado) => {
-    if (clase === "tipo") await supabase.rpc("moderar_tipo_producto", {p_id:id, p_estado:estado});
-    else await supabase.rpc("moderar_categoria", {p_id:id, p_estado:estado});
+    const { error: err } = clase === "tipo"
+      ? await supabase.rpc("moderar_tipo_producto", {p_id:id, p_estado:estado})
+      : await supabase.rpc("moderar_categoria", {p_id:id, p_estado:estado});
+    if (err) { alert("No se pudo moderar: " + err.message); return; }
     fetchPendientesCatalogo();
   };
 
@@ -75,6 +83,7 @@ export default function AdminView({ usuario }) {
   return (
     <div className="content">
       <div className="page-header"><div className="page-header-text"><h2>Administración</h2><p>Gestión de centros de acopio y catálogo</p></div></div>
+      {error && <div className="alert alert-error mb-4">⚠️ {error}</div>}
       {duplicados.length>0&&<div className="alert alert-error mb-4">⚠️ <strong>{duplicados.length}</strong> posible{duplicados.length>1?"s":""} centro{duplicados.length>1?"s":""} duplicado{duplicados.length>1?"s":""} detectado{duplicados.length>1?"s":""} por nombre similar.</div>}
       {pendientes.length>0&&<div className="alert alert-warning mb-4">⏳ <strong>{pendientes.length}</strong> centro{pendientes.length>1?"s":""} pendiente{pendientes.length>1?"s":""} de aprobación.</div>}
       {pendientesCatalogo.length>0&&<div className="alert alert-warning mb-4">🏷️ <strong>{pendientesCatalogo.length}</strong> tipo{pendientesCatalogo.length>1?"s":""}/categoría{pendientesCatalogo.length>1?"s":""} de producto pendiente{pendientesCatalogo.length>1?"s":""} de revisión.</div>}

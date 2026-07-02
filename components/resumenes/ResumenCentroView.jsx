@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Ico from "@/components/ui/Ico";
 import EstadoBadge from "@/components/ui/EstadoBadge";
@@ -14,18 +14,29 @@ export default function ResumenCentroView({ centro, tipos }) {
   const [expandidos, setExpandidos] = useState({});
   const [exportando, setExportando] = useState(false);
 
-  useEffect(()=>{
-    (async()=>{
-      setLoading(true);
-      const [{ data: d1 }, { data: d2 }] = await Promise.all([
-        supabase.from("vista_resumen_centro").select("*").eq("centro_id",centro.id),
-        supabase.from("vista_cajas_resumen").select("*").eq("centro_id",centro.id),
-      ]);
-      setData(d1||[]);
-      setDataCajas(d2||[]);
-      setLoading(false);
-    })();
+  const fetchResumen = useCallback(async () => {
+    setLoading(true);
+    const [{ data: d1 }, { data: d2 }] = await Promise.all([
+      supabase.from("vista_resumen_centro").select("*").eq("centro_id",centro.id),
+      supabase.from("vista_cajas_resumen").select("*").eq("centro_id",centro.id),
+    ]);
+    setData(d1||[]);
+    setDataCajas(d2||[]);
+    setLoading(false);
   },[centro.id]);
+
+  useEffect(()=>{ fetchResumen(); },[fetchResumen]);
+
+  // Suscripcion en tiempo real: cambios en donaciones o cajas de este centro
+  // refrescan el resumen automáticamente.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`resumen-centro-${centro.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "donaciones", filter: `centro_id=eq.${centro.id}` }, () => fetchResumen())
+      .on("postgres_changes", { event: "*", schema: "public", table: "cajas_embalaje", filter: `centro_id=eq.${centro.id}` }, () => fetchResumen())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [centro.id, fetchResumen]);
 
   const toggle = id => setExpandidos(e=>({...e,[id]:!e[id]}));
   const fuenteActual = modo === "donaciones" ? data : dataCajas;

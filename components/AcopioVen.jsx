@@ -24,16 +24,25 @@ export default function AcopioVen() {
   const [categorias, setCategorias] = useState([]);
   const [catalogo, setCatalogo] = useState([]);
   const [booting, setBooting] = useState(true);
+  const [errorCarga, setErrorCarga] = useState(null);
 
   // Recarga el catálogo completo (tipos, categorías y productos).
   // Se expone hacia abajo para que los componentes puedan refrescar
   // cuando se agrega un tipo/categoría nuevo durante la captura.
   const recargarCatalogoCompleto = useCallback(async () => {
-    const [{ data: t }, { data: cat }, { data: prod }] = await Promise.all([
+    const [
+      { data: t, error: errT },
+      { data: cat, error: errCat },
+      { data: prod, error: errProd },
+    ] = await Promise.all([
       supabase.from("tipos_producto").select("*").eq("activo", true).order("orden"),
       supabase.from("categorias").select("*").eq("activo", true).order("orden"),
       supabase.from("catalogo_productos").select("*").eq("activo", true).order("nombre"),
     ]);
+    if (errT || errCat || errProd) {
+      setErrorCarga("No se pudo cargar el catálogo de productos. Verifica tu conexión e intenta de nuevo.");
+      return;
+    }
     setTipos(t || []);
     setCategorias(cat || []);
     setCatalogo(prod || []);
@@ -53,40 +62,53 @@ export default function AcopioVen() {
   }, []);
 
   // Carga los datos del usuario y el catálogo cuando hay sesión activa
+  const cargarUsuarioYCentro = useCallback(async () => {
+    setBooting(true);
+    setErrorCarga(null);
+
+    const { data: usr, error: errUsr } = await supabase
+      .from("usuarios")
+      .select("*")
+      .eq("id", session.user.id)
+      .single();
+
+    if (errUsr) {
+      setErrorCarga("No se pudo cargar tu cuenta. Verifica tu conexión e intenta de nuevo.");
+      setBooting(false);
+      return;
+    }
+    setUsuario(usr);
+
+    if (usr?.centro_id) {
+      const { data: c, error: errCentro } = await supabase
+        .from("centros_acopio")
+        .select("*")
+        .eq("id", usr.centro_id)
+        .single();
+      if (errCentro) {
+        setErrorCarga("No se pudo cargar los datos de tu centro. Verifica tu conexión e intenta de nuevo.");
+        setBooting(false);
+        return;
+      }
+      setCentro(c);
+    } else if (usr?.rol === "admin_global") {
+      // El admin global no pertenece a un centro específico,
+      // pero necesita un objeto centro para que AppShell funcione.
+      setCentro({ id: null, nombre: "Administración Global", estado: "aprobado" });
+    }
+
+    await recargarCatalogoCompleto();
+    setBooting(false);
+  }, [session, recargarCatalogoCompleto]);
+
   useEffect(() => {
     if (session === undefined) return;
     if (!session) {
       setBooting(false);
       return;
     }
-
-    (async () => {
-      setBooting(true);
-
-      const { data: usr } = await supabase
-        .from("usuarios")
-        .select("*")
-        .eq("id", session.user.id)
-        .single();
-      setUsuario(usr);
-
-      if (usr?.centro_id) {
-        const { data: c } = await supabase
-          .from("centros_acopio")
-          .select("*")
-          .eq("id", usr.centro_id)
-          .single();
-        setCentro(c);
-      } else if (usr?.rol === "admin_global") {
-        // El admin global no pertenece a un centro específico,
-        // pero necesita un objeto centro para que AppShell funcione.
-        setCentro({ id: null, nombre: "Administración Global", estado: "aprobado" });
-      }
-
-      await recargarCatalogoCompleto();
-      setBooting(false);
-    })();
-  }, [session, recargarCatalogoCompleto]);
+    cargarUsuarioYCentro();
+  }, [session, cargarUsuarioYCentro]);
 
   // Solo tipos y categorías APROBADOS se ofrecen en el formulario de captura.
   // Los rechazados siguen siendo visibles en el Inventario (para no perder datos históricos)
@@ -119,6 +141,42 @@ export default function AcopioVen() {
   }
 
   if (!session) return <AuthView />;
+
+  // Error cargando la cuenta o el centro (distinto de "pendiente de aprobación")
+  if (errorCarga) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f8fafc",
+        }}
+      >
+        <div
+          style={{
+            background: "white",
+            borderRadius: 12,
+            padding: 32,
+            maxWidth: 380,
+            textAlign: "center",
+            boxShadow: "0 4px 20px rgba(0,0,0,.1)",
+          }}
+        >
+          <div style={{ fontSize: 48, marginBottom: 12 }}>⚠️</div>
+          <h2 style={{ fontFamily: "system-ui", marginBottom: 8, color: "#0f172a" }}>
+            No se pudo cargar tu cuenta
+          </h2>
+          <p style={{ color: "#64748b", marginBottom: 20, fontSize: 14 }}>{errorCarga}</p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <button className="btn btn-primary" onClick={cargarUsuarioYCentro}>Reintentar</button>
+            <button className="btn btn-secondary" onClick={() => supabase.auth.signOut()}>Cerrar sesión</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Centro pendiente de aprobación (o en revisión)
   if (!centro) {

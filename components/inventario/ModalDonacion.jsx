@@ -68,6 +68,10 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
     if (!form.tipo_id||!form.categoria_id||!form.nombre_producto||!form.cantidad_total) {
       setError("Completa: Tipo, Categoría, Nombre del producto y Cantidad."); return;
     }
+    const cantidadNum = parseInt(form.cantidad_total);
+    if (isNaN(cantidadNum) || cantidadNum <= 0 || cantidadNum > 100000) {
+      setError("La cantidad debe ser un número entero mayor a 0 y hasta 100,000."); return;
+    }
     setError(""); setLoading(true);
 
     try {
@@ -102,7 +106,7 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
         nombre_producto: form.nombre_producto,
         presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
         unidad: form.unidad,
-        cantidad_total: parseInt(form.cantidad_total),
+        cantidad_total: cantidadNum,
         unidades_nivel2: form.unidades_nivel2 ? parseInt(form.unidades_nivel2) : null,
         unidades_nivel3: esFrasco && form.tipo_frasco==="solido" ? parseInt(form.unidades_nivel3)||null : (form.unidades_nivel3 ? parseInt(form.unidades_nivel3) : null),
         tipo_frasco: esFrasco ? (form.tipo_frasco||null) : null,

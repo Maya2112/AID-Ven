@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF } from "@/lib/pdf";
 import { NAVY_RGB } from "@/lib/constants";
@@ -13,23 +13,35 @@ export default function ManifiestoView({ centro, esAdmin }) {
   const [filtroEstado, setFiltroEstado] = useState("listo_para_envio");
   const [exportandoPDF, setExportandoPDF] = useState(false);
 
-  useEffect(()=>{
-    (async()=>{
-      setLoading(true);
-      const tablaEst = alcance === "global" ? "vista_manifiesto_global" : "vista_manifiesto";
-      const tablaReal = alcance === "global" ? "vista_manifiesto_real_global" : "vista_manifiesto_real";
-      let queryEst = supabase.from(tablaEst).select("*");
-      let queryReal = supabase.from(tablaReal).select("*");
-      if (alcance === "centro") {
-        queryEst = queryEst.eq("centro_id", centro.id);
-        queryReal = queryReal.eq("centro_id", centro.id);
-      }
-      const [{ data: est }, { data: real }] = await Promise.all([queryEst, queryReal]);
-      setDataEstimado(est||[]);
-      setDataReal(real||[]);
-      setLoading(false);
-    })();
+  const fetchManifiesto = useCallback(async () => {
+    setLoading(true);
+    const tablaEst = alcance === "global" ? "vista_manifiesto_global" : "vista_manifiesto";
+    const tablaReal = alcance === "global" ? "vista_manifiesto_real_global" : "vista_manifiesto_real";
+    let queryEst = supabase.from(tablaEst).select("*");
+    let queryReal = supabase.from(tablaReal).select("*");
+    if (alcance === "centro") {
+      queryEst = queryEst.eq("centro_id", centro.id);
+      queryReal = queryReal.eq("centro_id", centro.id);
+    }
+    const [{ data: est }, { data: real }] = await Promise.all([queryEst, queryReal]);
+    setDataEstimado(est||[]);
+    setDataReal(real||[]);
+    setLoading(false);
   },[centro.id, alcance]);
+
+  useEffect(()=>{ fetchManifiesto(); },[fetchManifiesto]);
+
+  // Suscripcion en tiempo real: cambios en donaciones/cajas refrescan el manifiesto.
+  // En alcance "centro" se filtra por centro_id; en "global" se escucha todo.
+  useEffect(() => {
+    const filtroCentro = alcance === "centro" ? `centro_id=eq.${centro.id}` : undefined;
+    const channel = supabase
+      .channel(`manifiesto-${alcance}-${centro.id ?? "global"}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "donaciones", ...(filtroCentro?{filter:filtroCentro}:{}) }, () => fetchManifiesto())
+      .on("postgres_changes", { event: "*", schema: "public", table: "cajas_embalaje", ...(filtroCentro?{filter:filtroCentro}:{}) }, () => fetchManifiesto())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [centro.id, alcance, fetchManifiesto]);
 
   const data = modo === "estimado" ? dataEstimado : dataReal;
   const filtrados = filtroEstado==="all" ? data : data.filter(d=>d.estado===filtroEstado);

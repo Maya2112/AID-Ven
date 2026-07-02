@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Ico from "@/components/ui/Ico";
 import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF } from "@/lib/pdf";
@@ -13,18 +13,29 @@ export default function ResumenGlobalView() {
   const [expandidos, setExpandidos] = useState({});
   const [exportando, setExportando] = useState(false);
 
-  useEffect(()=>{
-    (async()=>{
-      setLoading(true);
-      const [{ data: d1 }, { data: d2 }] = await Promise.all([
-        supabase.from("vista_resumen_global").select("*"),
-        supabase.from("vista_cajas_resumen_global").select("*"),
-      ]);
-      setData(d1||[]);
-      setDataCajas(d2||[]);
-      setLoading(false);
-    })();
+  const fetchResumen = useCallback(async () => {
+    setLoading(true);
+    const [{ data: d1 }, { data: d2 }] = await Promise.all([
+      supabase.from("vista_resumen_global").select("*"),
+      supabase.from("vista_cajas_resumen_global").select("*"),
+    ]);
+    setData(d1||[]);
+    setDataCajas(d2||[]);
+    setLoading(false);
   },[]);
+
+  useEffect(()=>{ fetchResumen(); },[fetchResumen]);
+
+  // Suscripcion en tiempo real: cualquier cambio en donaciones o cajas
+  // de cualquier centro refresca este resumen global.
+  useEffect(() => {
+    const channel = supabase
+      .channel("resumen-global")
+      .on("postgres_changes", { event: "*", schema: "public", table: "donaciones" }, () => fetchResumen())
+      .on("postgres_changes", { event: "*", schema: "public", table: "cajas_embalaje" }, () => fetchResumen())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchResumen]);
 
   const toggle = id => setExpandidos(e=>({...e,[id]:!e[id]}));
   const fuenteActual = modo === "donaciones" ? data : dataCajas;

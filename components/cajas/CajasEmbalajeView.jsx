@@ -10,6 +10,7 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
   const [showModal, setShowModal] = useState(false);
   const [editando, setEditando] = useState(null);
   const [filtroTipo, setFiltroTipo] = useState("all");
+  const [error, setError] = useState("");
 
   const fetchCajas = useCallback(async () => {
     setLoading(true);
@@ -21,6 +22,19 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
 
   useEffect(() => { fetchCajas(); }, [fetchCajas]);
 
+  // Suscripcion en tiempo real: si otro voluntario del mismo centro registra,
+  // edita o elimina una caja desde otro dispositivo, esta vista se refresca sola.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`cajas-centro-${centro.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "cajas_embalaje", filter: `centro_id=eq.${centro.id}` },
+        () => { fetchCajas(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [centro.id, fetchCajas]);
+
   const getNombre = (id, arr) => arr.find(a=>a.id===id)?.nombre || "—";
   const filtradas = filtroTipo === "all" ? cajas : cajas.filter(c=>c.tipo_id===filtroTipo);
 
@@ -28,13 +42,17 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
   const totalVol = filtradas.reduce((s,c)=>s+(parseFloat(c.volumen_m3)||0),0);
 
   const cambiarEstado = async (id, estado) => {
-    await supabase.from("cajas_embalaje").update({estado}).eq("id", id);
+    setError("");
+    const { error: err } = await supabase.from("cajas_embalaje").update({estado}).eq("id", id);
+    if (err) { setError("No se pudo cambiar el estado: " + err.message); return; }
     setCajas(prev=>prev.map(c=>c.id===id?{...c,estado}:c));
   };
 
   const eliminar = async (id) => {
     if (!confirm("¿Eliminar esta caja registrada? No se puede deshacer.")) return;
-    await supabase.from("cajas_embalaje").delete().eq("id", id);
+    setError("");
+    const { error: err } = await supabase.from("cajas_embalaje").delete().eq("id", id);
+    if (err) { setError("No se pudo eliminar: " + err.message); return; }
     setCajas(prev=>prev.filter(c=>c.id!==id));
   };
 
@@ -49,6 +67,8 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
           ＋ Registrar Caja
         </button>
       </div>
+
+      {error && <div className="alert alert-error mb-4">⚠️ {error}</div>}
 
       <div className="stats-grid">
         <div className="stat-card accent-blue">

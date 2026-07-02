@@ -11,6 +11,7 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
   const [filtroEstado, setFiltroEstado] = useState("all");
   const [busqueda, setBusqueda] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [error, setError] = useState("");
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -44,12 +45,16 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
   });
 
   const cambiarEstado = async (id,estado) => {
-    await supabase.from("donaciones").update({estado}).eq("id",id);
+    setError("");
+    const { error: err } = await supabase.from("donaciones").update({estado}).eq("id",id);
+    if (err) { setError("No se pudo cambiar el estado: " + err.message); return; }
     setDonaciones(prev=>prev.map(d=>d.id===id?{...d,estado}:d));
   };
   const eliminar = async id => {
     if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return;
-    await supabase.from("donaciones").delete().eq("id",id);
+    setError("");
+    const { error: err } = await supabase.from("donaciones").delete().eq("id",id);
+    if (err) { setError("No se pudo eliminar: " + err.message); return; }
     setDonaciones(prev=>prev.filter(d=>d.id!==id));
   };
 
@@ -62,6 +67,7 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
         </div>
         <button className="btn btn-primary" onClick={()=>setShowModal(true)} disabled={centro.estado!=="aprobado"}>＋ Nueva Donación</button>
       </div>
+      {error && <div className="alert alert-error mb-4">⚠️ {error}</div>}
       <div className="card card-pad mb-4">
         <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end"}}>
           <div className="field" style={{flex:"1 1 200px"}}><label>Buscar</label><input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Nombre del producto..."/></div>
