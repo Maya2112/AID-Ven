@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Ico from "@/components/ui/Ico";
 import EstadoBadge from "@/components/ui/EstadoBadge";
-import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF } from "@/lib/pdf";
+import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF, cargarImagenComoDataURL } from "@/lib/pdf";
 import { NAVY_RGB } from "@/lib/constants";
 
 export default function ResumenCentroView({ centro, tipos }) {
@@ -51,12 +51,16 @@ export default function ResumenCentroView({ centro, tipos }) {
   const exportarPDF = async () => {
     setExportando(true);
     try {
-      const jsPDF = await cargarJsPDF();
+      const [jsPDF, logoDataUrl] = await Promise.all([
+        cargarJsPDF(),
+        centro.logo_url ? cargarImagenComoDataURL(centro.logo_url) : Promise.resolve(null),
+      ]);
       const doc = new jsPDF();
       let y = dibujarEncabezadoPDF(doc, {
         titulo: "Resumen de mi Centro",
         subtitulo: centro.nombre,
         fuenteLabel: modo === "donaciones" ? "Estimado (donaciones)" : "Real (cajas embaladas)",
+        logoDataUrl,
       });
       y = dibujarStatsPDF(doc, y, [
         { label: modo==="donaciones"?"Total unidades":"Total cajas", value: totalCant.toLocaleString(), color: [37,99,235] },

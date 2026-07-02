@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF } from "@/lib/pdf";
+import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF, cargarImagenComoDataURL } from "@/lib/pdf";
 import { NAVY_RGB } from "@/lib/constants";
 
 export default function ManifiestoView({ centro, esAdmin }) {
@@ -76,12 +76,18 @@ export default function ManifiestoView({ centro, esAdmin }) {
   const exportPDF = async () => {
     setExportandoPDF(true);
     try {
-      const jsPDF = await cargarJsPDF();
+      // El logo del centro solo aplica al manifiesto de "Mi centro": en "Global"
+      // se mezclan varios centros y no corresponde mostrar un solo logo.
+      const [jsPDF, logoDataUrl] = await Promise.all([
+        cargarJsPDF(),
+        (alcance === "centro" && centro.logo_url) ? cargarImagenComoDataURL(centro.logo_url) : Promise.resolve(null),
+      ]);
       const doc = new jsPDF({ orientation: "landscape" });
       let y = dibujarEncabezadoPDF(doc, {
         titulo: "Manifiesto de Carga",
         subtitulo: tituloAlcance,
         fuenteLabel: modo === "estimado" ? "Estimado (catálogo)" : "Real (cajas embaladas)",
+        logoDataUrl,
       });
       y = dibujarStatsPDF(doc, y, [
         { label: "Líneas", value: filtrados.length, color: [37,99,235] },

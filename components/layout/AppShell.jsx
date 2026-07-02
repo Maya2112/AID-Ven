@@ -9,14 +9,21 @@ import ResumenCentroView from "@/components/resumenes/ResumenCentroView";
 import ResumenGlobalView from "@/components/resumenes/ResumenGlobalView";
 import ManifiestoView from "@/components/manifiesto/ManifiestoView";
 import AdminView from "@/components/admin/AdminView";
+import ModalLogoCentro from "./ModalLogoCentro";
 
 export default function AppShell({ usuario, centro, tipos, categorias, tiposParaCaptura, categoriasParaCaptura, catalogo, onCatalogoChange }) {
   const [vista, setVista] = useState("dashboard");
   const [sidebarAbierto, setSidebarAbierto] = useState(false);
   const [esMovil, setEsMovil] = useState(false);
+  const [showModalLogo, setShowModalLogo] = useState(false);
+  const [logoOverride, setLogoOverride] = useState(undefined); // undefined = usar el de `centro` tal cual
   const isAdmin = usuario?.rol==="admin_global";
   const isAdminCiudad = usuario?.rol==="admin_ciudad";
   const logout = () => supabase.auth.signOut();
+
+  // El centro que se pasa a las vistas hijas, reflejando el logo recién
+  // subido/quitado sin esperar a un refetch completo desde AcopioVen.
+  const centroEfectivo = centro && logoOverride !== undefined ? { ...centro, logo_url: logoOverride } : centro;
 
   // Deteccion robusta de movil via JS (no depende de que el media query CSS cargue a tiempo).
   // Aplicamos estilos INLINE segun esto, que siempre tienen prioridad sobre el CSS externo.
@@ -84,13 +91,29 @@ export default function AppShell({ usuario, centro, tipos, categorias, tiposPara
           ))}
         </nav>
         <div className="sidebar-footer">
-          {centro&&(
+          {centroEfectivo&&(
             <div className="centro-badge">
               <p>Centro de acopio</p>
-              <h3>{centro.nombre}</h3>
+              {centroEfectivo.id && (
+                <div style={{display:"flex",alignItems:"center",gap:8,margin:"4px 0"}}>
+                  <div style={{
+                    width:32,height:32,borderRadius:8,overflow:"hidden",flexShrink:0,
+                    background:"rgba(255,255,255,.1)",display:"flex",alignItems:"center",justifyContent:"center"
+                  }}>
+                    {centroEfectivo.logo_url
+                      ? <img src={centroEfectivo.logo_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                      : <span style={{fontSize:14}}>🏢</span>}
+                  </div>
+                  <button onClick={()=>setShowModalLogo(true)}
+                    style={{background:"none",border:"none",color:"rgba(255,255,255,.6)",fontSize:11,cursor:"pointer",textDecoration:"underline",padding:0}}>
+                    {centroEfectivo.logo_url?"Cambiar logo":"Subir logo"}
+                  </button>
+                </div>
+              )}
+              <h3>{centroEfectivo.nombre}</h3>
               <div style={{marginTop:4,fontSize:11,color:"rgba(255,255,255,.5)"}}>
-                <span className={`status-dot status-${centro.estado}`}/>
-                {centro.estado==="aprobado"?"Aprobado":centro.estado==="pendiente"?"Pendiente aprobación":"Suspendido"}
+                <span className={`status-dot status-${centroEfectivo.estado}`}/>
+                {centroEfectivo.estado==="aprobado"?"Aprobado":centroEfectivo.estado==="pendiente"?"Pendiente aprobación":"Suspendido"}
               </div>
             </div>
           )}
@@ -98,14 +121,22 @@ export default function AppShell({ usuario, centro, tipos, categorias, tiposPara
         </div>
       </aside>
       <main className="main" style={mainStyle}>
-        {vista==="dashboard"&&<Dashboard centro={centro} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={onCatalogoChange} esAdmin={isAdmin}/>}
-        {vista==="inventario"&&<InventarioView centro={centro} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={onCatalogoChange} esAdmin={isAdmin}/>}
-        {vista==="cajas"&&<CajasEmbalajeView centro={centro} tipos={tipos} categorias={categorias}/>}
-        {vista==="resumen-centro"&&<ResumenCentroView centro={centro} tipos={tipos}/>}
+        {vista==="dashboard"&&<Dashboard centro={centroEfectivo} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={onCatalogoChange} esAdmin={isAdmin}/>}
+        {vista==="inventario"&&<InventarioView centro={centroEfectivo} tipos={tipos} categorias={categorias} tiposParaCaptura={tiposParaCaptura} categoriasParaCaptura={categoriasParaCaptura} catalogo={catalogo} onCatalogoChange={onCatalogoChange} esAdmin={isAdmin}/>}
+        {vista==="cajas"&&<CajasEmbalajeView centro={centroEfectivo} tipos={tipos} categorias={categorias}/>}
+        {vista==="resumen-centro"&&<ResumenCentroView centro={centroEfectivo} tipos={tipos}/>}
         {vista==="resumen-global"&&<ResumenGlobalView/>}
-        {vista==="manifiesto"&&<ManifiestoView centro={centro} esAdmin={isAdmin}/>}
+        {vista==="manifiesto"&&<ManifiestoView centro={centroEfectivo} esAdmin={isAdmin}/>}
         {vista==="admin"&&<AdminView usuario={usuario}/>}
       </main>
+      {showModalLogo && centroEfectivo?.id && (
+        <ModalLogoCentro
+          centroId={centroEfectivo.id}
+          logoUrl={centroEfectivo.logo_url}
+          onClose={()=>setShowModalLogo(false)}
+          onSaved={(nuevaUrl)=>{ setLogoOverride(nuevaUrl); setShowModalLogo(false); }}
+        />
+      )}
     </div>
   );
 }
