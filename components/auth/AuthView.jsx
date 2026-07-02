@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 
@@ -18,14 +18,20 @@ export default function AuthView() {
     codigo_invitacion:""
   });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const codigoValidacionId = useRef(0);
 
   // Valida el código y resuelve la ciudad a la que quedará amarrado el centro
   // (el registro ya no pide la ciudad como texto libre: la fija el código).
+  // Guardado contra condiciones de carrera: si el usuario cambia el código varias
+  // veces rápido, una respuesta vieja que llega tarde no debe pisar el estado de
+  // una validación más nueva que ya haya resuelto.
   const validarCodigo = async () => {
     const codigo = form.codigo_invitacion.trim().toUpperCase();
+    const idValidacion = ++codigoValidacionId.current;
     if (!codigo) { setCodigoInfo({ estado:"pendiente", ciudad:null }); return false; }
     setCodigoInfo({ estado:"validando", ciudad:null });
     const { data, error } = await supabase.rpc("validar_codigo_invitacion", { p_codigo: codigo }).single();
+    if (idValidacion !== codigoValidacionId.current) return !error && !!data?.valido;
     if (error || !data?.valido) {
       setCodigoInfo({ estado:"invalido", ciudad:null });
       return false;
@@ -152,7 +158,7 @@ export default function AuthView() {
                     <div className="field">
                       <label>Código de invitación<span className="req">*</span></label>
                       <input value={form.codigo_invitacion}
-                        onChange={e=>{set("codigo_invitacion",e.target.value.toUpperCase());setCodigoInfo({estado:"pendiente",ciudad:null});}}
+                        onChange={e=>{codigoValidacionId.current++;set("codigo_invitacion",e.target.value.toUpperCase());setCodigoInfo({estado:"pendiente",ciudad:null});}}
                         onBlur={validarCodigo}
                         required placeholder="Ej: 7XK2QF9M" style={{textTransform:"uppercase",letterSpacing:1}}/>
                       {codigoInfo.estado==="validando" && <span className="hint">Verificando código...</span>}

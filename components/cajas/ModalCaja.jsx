@@ -84,6 +84,13 @@ export default function ModalCaja({ onClose, onSaved, tipos, categorias, centroI
       setError("El peso de la caja debe ser un número mayor a 0 y menor o igual a 500 kg."); return;
     }
     setError(""); setLoading(true);
+    // Solo se marca como "peso manual" si de verdad se escribió/cambió el peso.
+    // Si alguien abre una caja auto-calculada únicamente para agregar/quitar
+    // contenido desde el nuevo selector, sin tocar el peso, el auto-cálculo debe
+    // seguir funcionando — si no, la sola presencia del campo (que es obligatorio
+    // para guardar) apagaría el auto-peso cada vez que se usa esa función.
+    const pesoOriginal = cajaExistente?.peso_kg != null ? parseFloat(cajaExistente.peso_kg) : null;
+    const pesoFueEditado = !cajaExistente || pesoOriginal !== pesoNum;
     const payload = {
       centro_id: centroId,
       tipo_id: form.tipo_id,
@@ -93,14 +100,11 @@ export default function ModalCaja({ onClose, onSaved, tipos, categorias, centroI
       ancho_cm: form.ancho_cm ? parseFloat(form.ancho_cm) : null,
       alto_cm: form.alto_cm ? parseFloat(form.alto_cm) : null,
       peso_kg: pesoNum,
-      // Se está escribiendo el peso a mano (medido en báscula): deja de ser automático
-      // y cualquier aviso de "puede haber cambiado" queda resuelto.
-      peso_auto: false,
-      peso_desactualizado: false,
       contenido_resumen: form.contenido_resumen || null,
       estado: form.estado,
       fecha_empaque: form.fecha_empaque,
       observaciones: form.observaciones || null,
+      ...(pesoFueEditado ? { peso_auto: false, peso_desactualizado: false } : {}),
     };
     try {
       let cajaId = cajaExistente?.id;
@@ -113,14 +117,17 @@ export default function ModalCaja({ onClose, onSaved, tipos, categorias, centroI
         cajaId = nueva.id;
       }
 
+      // Condicionado a que la donación siga en el estado esperado (sin caja / en
+      // esta misma caja): si otro dispositivo ya la movió mientras este modal
+      // estaba abierto, no la robamos de donde haya quedado — simplemente no pasa nada.
       if (paraAgregar.size > 0) {
         const { error: errAgregar } = await supabase.from("donaciones")
-          .update({ caja_id: cajaId }).in("id", Array.from(paraAgregar));
+          .update({ caja_id: cajaId }).in("id", Array.from(paraAgregar)).is("caja_id", null);
         if (errAgregar) { setError("La caja se guardó, pero no se pudieron agregar algunas donaciones: " + errAgregar.message); setLoading(false); return; }
       }
       if (paraQuitar.size > 0) {
         const { error: errQuitar } = await supabase.from("donaciones")
-          .update({ caja_id: null }).in("id", Array.from(paraQuitar));
+          .update({ caja_id: null }).in("id", Array.from(paraQuitar)).eq("caja_id", cajaId);
         if (errQuitar) { setError("La caja se guardó, pero no se pudieron quitar algunas donaciones: " + errQuitar.message); setLoading(false); return; }
       }
 

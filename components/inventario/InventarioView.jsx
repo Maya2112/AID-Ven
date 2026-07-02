@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { claseFilaEstado } from "@/lib/constants";
+import LeyendaEstados from "@/components/ui/LeyendaEstados";
 import ModalDonacion from "./ModalDonacion";
 import ModalAsignarCaja from "./ModalAsignarCaja";
 
@@ -63,7 +65,7 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
     <div className="content">
       <div className="page-header">
         <div className="page-header-text">
-          <h2>Inventario completo</h2>
+          <h2>Inventario de Donativos</h2>
           <p>{donaciones.length} registros en {centro.nombre}</p>
         </div>
         <button className="btn btn-primary" onClick={()=>setShowModal(true)} disabled={centro.estado!=="aprobado"}>＋ Nueva Donación</button>
@@ -92,6 +94,7 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
       </div>
       <div className="card">
         <div className="card-header"><h3>Registros ({filtradas.length})</h3></div>
+        <div style={{padding:"14px 20px 0"}}><LeyendaEstados/></div>
         <div className="table-wrap">
           {loading ? <div className="empty-state"><p>Cargando...</p></div>
           : filtradas.length===0 ? <div className="empty-state"><h3>Sin resultados</h3><p>Ajusta los filtros para ver registros.</p></div>
@@ -100,7 +103,7 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
               <thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Producto</th><th>Conc.</th><th>Unidad/Talla</th><th>Cant.</th><th>Uds.Mín.</th><th>Peso(kg)</th><th>Caja</th><th>Estado</th><th></th></tr></thead>
               <tbody>
                 {filtradas.map(d=>(
-                  <tr key={d.id}>
+                  <tr key={d.id} className={claseFilaEstado(d.estado)}>
                     <td style={{whiteSpace:"nowrap",fontSize:12}}>{d.fecha_ingreso}</td>
                     <td><span className="badge badge-slate" style={{fontSize:11}}>{getNombre(d.tipo_id,tipos)}</span></td>
                     <td style={{fontSize:12}}>{getNombre(d.categoria_id,categorias)}</td>

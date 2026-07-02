@@ -19,7 +19,10 @@ export default function AppShell({ usuario, centro, tipos, categorias, tiposPara
   const [logoOverride, setLogoOverride] = useState(undefined); // undefined = usar el de `centro` tal cual
   const isAdmin = usuario?.rol==="admin_global";
   const isAdminCiudad = usuario?.rol==="admin_ciudad";
-  const logout = () => supabase.auth.signOut();
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) alert("No se pudo cerrar sesión: " + error.message);
+  };
 
   // El centro que se pasa a las vistas hijas, reflejando el logo recién
   // subido/quitado sin esperar a un refetch completo desde AcopioVen.
@@ -36,8 +39,8 @@ export default function AppShell({ usuario, centro, tipos, categorias, tiposPara
 
   const nav = [
     {id:"dashboard",label:"Panel Principal",icon:"home"},
-    {id:"inventario",label:"Inventario",icon:"list"},
-    {id:"cajas",label:"Cajas de Embalaje",icon:"package"},
+    {id:"inventario",label:"Inventario de Donativos",icon:"list"},
+    {id:"cajas",label:"Lista de Cajas",icon:"package"},
     {id:"resumen-centro",label:"Resumen de mi Centro",icon:"chart"},
     {id:"resumen-global",label:"Resumen Global",icon:"globe"},
     {id:"manifiesto",label:"Manifiesto de Carga",icon:"truck"},

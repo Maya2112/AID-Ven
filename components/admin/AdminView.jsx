@@ -83,8 +83,8 @@ export default function AdminView({ usuario }) {
   const fusionar = async (idDuplicado, idCorrecto, nombreDuplicado) => {
     if (!confirm(`¿Fusionar "${nombreDuplicado}" en el otro centro? Todas sus donaciones y cajas se moverán al centro correcto, y este quedará suspendido. Esta acción no se puede deshacer.`)) return;
     setFusionando(idDuplicado);
-    const { error } = await supabase.rpc("fusionar_centros", { p_centro_duplicado_id: idDuplicado, p_centro_correcto_id: idCorrecto });
-    if (error) alert("No se pudo fusionar: " + error.message);
+    const { error: err } = await supabase.rpc("fusionar_centros", { p_centro_duplicado_id: idDuplicado, p_centro_correcto_id: idCorrecto });
+    if (err) alert("No se pudo fusionar: " + err.message);
     setFusionando(null);
     fetchCentros(); fetchDuplicados();
   };

@@ -11,6 +11,15 @@
     --white: #ffffff; --radius: 10px; --radius-sm: 6px;
     --shadow: 0 1px 3px rgba(0,0,0,.08); --shadow-md: 0 4px 12px rgba(0,0,0,.10); --shadow-lg: 0 10px 30px rgba(0,0,0,.12);
     --font-ui: 'Inter', system-ui, sans-serif; --font-display: 'Space Grotesk', system-ui, sans-serif;
+
+    /* Escala secuencial (un solo tono, de más claro a más oscuro) para el progreso
+       de un donativo/caja: recibido → clasificado → empacado → listo → enviado.
+       "Más oscuro" = más avanzado; el último paso converge al navy de marca. */
+    --estado-1-bg: #d3e3f7; --estado-1-text: #0f172a; --estado-1-row: #f7fafd;
+    --estado-2-bg: #a9c8ec; --estado-2-text: #0f172a; --estado-2-row: #eef4fb;
+    --estado-3-bg: #6f9edb; --estado-3-text: #0f172a; --estado-3-row: #e2ecf8;
+    --estado-4-bg: #3d6bc0; --estado-4-text: #ffffff; --estado-4-row: #d3e3f6;
+    --estado-5-bg: #152c56; --estado-5-text: #ffffff; --estado-5-row: #c2d5ef;
   }
   html { -webkit-text-size-adjust: 100%; }
   body { font-family: var(--font-ui); background: var(--slate-50); color: var(--slate-900); min-height: 100vh; overflow-x: hidden; max-width: 100vw; }
@@ -90,6 +99,19 @@
   .badge-red { background: var(--red-light); color: #991b1b; }
   .badge-slate { background: var(--slate-100); color: var(--slate-700); }
   .badge-navy { background: #dde6f5; color: var(--navy-700); }
+  .badge-estado-1 { background: var(--estado-1-bg); color: var(--estado-1-text); }
+  .badge-estado-2 { background: var(--estado-2-bg); color: var(--estado-2-text); }
+  .badge-estado-3 { background: var(--estado-3-bg); color: var(--estado-3-text); }
+  .badge-estado-4 { background: var(--estado-4-bg); color: var(--estado-4-text); }
+  .badge-estado-5 { background: var(--estado-5-bg); color: var(--estado-5-text); }
+  .fila-estado-1 td { background: var(--estado-1-row); }
+  .fila-estado-2 td { background: var(--estado-2-row); }
+  .fila-estado-3 td { background: var(--estado-3-row); }
+  .fila-estado-4 td { background: var(--estado-4-row); }
+  .fila-estado-5 td { background: var(--estado-5-row); }
+  .leyenda-estados { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 11.5px; color: var(--slate-500); margin-bottom: 14px; }
+  .leyenda-estados .item { display: flex; align-items: center; gap: 5px; }
+  .leyenda-estados .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
   .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--navy); padding: 20px; }
   .auth-card { background: white; border-radius: 16px; padding: 40px; width: 100%; max-width: 420px; box-shadow: var(--shadow-lg); }
   .auth-logo { text-align: center; margin-bottom: 28px; }

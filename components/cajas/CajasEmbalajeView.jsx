@@ -1,8 +1,10 @@
 "use client";
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { supabase } from "@/lib/supabase";
+import { claseFilaEstado } from "@/lib/constants";
 import ModalCaja from "./ModalCaja";
 import EstadoBadge from "@/components/ui/EstadoBadge";
+import LeyendaEstados from "@/components/ui/LeyendaEstados";
 
 export default function CajasEmbalajeView({ centro, tipos, categorias }) {
   const [cajas, setCajas] = useState([]);
@@ -13,6 +15,8 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
   const [error, setError] = useState("");
   const [expandida, setExpandida] = useState(null);
   const [contenidoPorCaja, setContenidoPorCaja] = useState({});
+  const contenidoPorCajaRef = useRef(contenidoPorCaja);
+  contenidoPorCajaRef.current = contenidoPorCaja;
 
   const cargarContenidoCaja = async (cajaId) => {
     const { data } = await supabase.from("donaciones").select("*").eq("caja_id", cajaId).order("fecha_ingreso");
@@ -48,6 +52,23 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
     return () => { supabase.removeChannel(channel); };
   }, [centro.id, fetchCajas]);
 
+  // Si otro dispositivo agrega/quita una donación de una caja que este dispositivo
+  // ya tiene expandida (previsualizando su contenido), se refresca ese contenido —
+  // si no, el peso de la fila cambiaría en vivo pero la lista de abajo quedaría vieja.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`cajas-donaciones-centro-${centro.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "donaciones", filter: `centro_id=eq.${centro.id}` },
+        (payload) => {
+          const afectadas = [payload.new?.caja_id, payload.old?.caja_id].filter(Boolean);
+          afectadas.filter(id => contenidoPorCajaRef.current[id]).forEach(id => cargarContenidoCaja(id));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [centro.id]);
+
   const getNombre = (id, arr) => arr.find(a=>a.id===id)?.nombre || "—";
   const filtradas = filtroTipo === "all" ? cajas : cajas.filter(c=>c.tipo_id===filtroTipo);
 
@@ -73,7 +94,7 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
     <div className="content">
       <div className="page-header">
         <div className="page-header-text">
-          <h2>Cajas de Embalaje</h2>
+          <h2>Lista de Cajas</h2>
           <p>Peso y volumen real medido de cada caja física empacada · {centro.nombre}</p>
         </div>
         <button className="btn btn-primary" onClick={()=>{setEditando(null);setShowModal(true);}} disabled={centro.estado!=="aprobado"}>
@@ -112,6 +133,7 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
 
       <div className="card">
         <div className="card-header"><h3>Cajas registradas ({filtradas.length})</h3></div>
+        <div style={{padding:"14px 20px 0"}}><LeyendaEstados estados={["empacado","listo_para_envio","enviado"]}/></div>
         <div className="table-wrap">
           {loading ? <div className="empty-state"><p>Cargando...</p></div>
           : filtradas.length===0 ? (
@@ -135,7 +157,7 @@ export default function CajasEmbalajeView({ centro, tipos, categorias }) {
                   const contenido = contenidoPorCaja[c.id];
                   return (
                   <Fragment key={c.id}>
-                  <tr>
+                  <tr className={claseFilaEstado(c.estado)}>
                     <td>
                       <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={()=>toggleExpandir(c.id)} title="Ver contenido">
                         {abierta ? "▼" : "▶"}

@@ -76,7 +76,8 @@ export default function ModalLogoCentro({ centroId, logoUrl, onClose, onSaved })
     if (!confirm("¿Quitar el logo de tu centro? Los PDFs volverán a usar el encabezado estándar de AcopioVen.")) return;
     setError(""); setLoading(true);
     try {
-      await supabase.storage.from("logos-centros").remove([`${centroId}/logo.png`]);
+      const { error: errRemove } = await supabase.storage.from("logos-centros").remove([`${centroId}/logo.png`]);
+      if (errRemove) throw errRemove;
       const { error: errUpdate } = await supabase.from("centros_acopio")
         .update({ logo_url: null }).eq("id", centroId);
       if (errUpdate) throw errUpdate;
