@@ -14,6 +14,7 @@ export default function AdminView({ usuario }) {
   const [codigos, setCodigos] = useState([]);
   const [ciudades, setCiudades] = useState([]);
   const [admins, setAdmins] = useState([]);
+  const [solicitudes, setSolicitudes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fusionando, setFusionando] = useState(null);
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
@@ -22,6 +23,7 @@ export default function AdminView({ usuario }) {
   const [asignandoAdmin, setAsignandoAdmin] = useState(false);
   const [nuevoAdminEmail, setNuevoAdminEmail] = useState("");
   const [nuevoAdminCiudad, setNuevoAdminCiudad] = useState("");
+  const [atendiendoSolicitud, setAtendiendoSolicitud] = useState(null);
   const [error, setError] = useState("");
 
   const fetchCentros = useCallback(async () => {
@@ -60,11 +62,17 @@ export default function AdminView({ usuario }) {
     if (err) setError("No se pudieron cargar los administradores de ciudad: " + err.message);
     else setAdmins(data||[]);
   }, []);
+  const fetchSolicitudes = useCallback(async () => {
+    const { data, error: err } = await supabase.from("solicitudes_codigo")
+      .select("*").eq("estado","pendiente").order("created_at",{ascending:true});
+    if (err) setError("No se pudieron cargar las solicitudes de código: " + err.message);
+    else setSolicitudes(data||[]);
+  }, []);
 
   useEffect(()=>{
-    fetchCentros(); fetchCodigos(); fetchCiudades();
+    fetchCentros(); fetchCodigos(); fetchCiudades(); fetchSolicitudes();
     if (esSuperAdmin) { fetchPendientesCatalogo(); fetchDuplicados(); fetchAdmins(); }
-  },[fetchCentros, fetchCodigos, fetchCiudades, fetchPendientesCatalogo, fetchDuplicados, fetchAdmins, esSuperAdmin]);
+  },[fetchCentros, fetchCodigos, fetchCiudades, fetchSolicitudes, fetchPendientesCatalogo, fetchDuplicados, fetchAdmins, esSuperAdmin]);
 
   const cambiarEstado = async (id,estado) => {
     const { error: err } = await supabase.rpc("cambiar_estado_centro",{p_centro_id:id,p_estado:estado});
@@ -108,6 +116,24 @@ export default function AdminView({ usuario }) {
     if (err) alert("No se pudo asignar: " + err.message);
     else { setNuevoAdminEmail(""); setNuevoAdminCiudad(""); fetchAdmins(); }
     setAsignandoAdmin(false);
+  };
+
+  const atenderSolicitud = async (s) => {
+    setAtendiendoSolicitud(s.id);
+    const { data, error } = await supabase.rpc("atender_solicitud_codigo", { p_solicitud_id: s.id }).single();
+    if (error) alert("No se pudo generar el código: " + error.message);
+    else setCodigoNuevo(data);
+    setAtendiendoSolicitud(null);
+    fetchSolicitudes(); fetchCodigos();
+  };
+
+  const rechazarSolicitud = async (s) => {
+    if (!confirm(`¿Rechazar la solicitud de "${s.nombre}" (${s.email})?`)) return;
+    setAtendiendoSolicitud(s.id);
+    const { error } = await supabase.rpc("rechazar_solicitud_codigo", { p_solicitud_id: s.id });
+    if (error) alert("No se pudo rechazar: " + error.message);
+    setAtendiendoSolicitud(null);
+    fetchSolicitudes();
   };
 
   const revocarAdmin = async (usuarioId, nombre) => {
@@ -172,6 +198,35 @@ export default function AdminView({ usuario }) {
                 </tbody>
               </table>
             )}
+          </div>
+        </div>
+      )}
+
+      {solicitudes.length>0 && (
+        <div className="card mb-4">
+          <div className="card-header"><h3>Solicitudes de Código ({solicitudes.length})</h3></div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Nombre</th><th>Correo</th><th>Ciudad</th><th>Centro</th><th>Teléfono</th><th>Fecha</th><th>Acción</th></tr></thead>
+              <tbody>
+                {solicitudes.map(s=>(
+                  <tr key={s.id}>
+                    <td style={{fontWeight:600}}>{s.nombre}</td>
+                    <td style={{fontSize:12}}>{s.email}</td>
+                    <td style={{fontSize:12}}>{s.ciudad}</td>
+                    <td style={{fontSize:12}}>{s.centro_nombre||"—"}</td>
+                    <td style={{fontSize:12}}>{s.telefono||"—"}</td>
+                    <td style={{fontSize:12,whiteSpace:"nowrap"}}>{new Date(s.created_at).toLocaleString("es-MX")}</td>
+                    <td><div style={{display:"flex",gap:8}}>
+                      <button className="btn btn-success btn-sm" disabled={atendiendoSolicitud===s.id} onClick={()=>atenderSolicitud(s)}>
+                        {atendiendoSolicitud===s.id?<span className="spinner"/>:"✓ Generar código"}
+                      </button>
+                      <button className="btn btn-danger btn-sm" disabled={atendiendoSolicitud===s.id} onClick={()=>rechazarSolicitud(s)}>✕ Rechazar</button>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

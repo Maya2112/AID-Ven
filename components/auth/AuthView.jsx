@@ -20,6 +20,38 @@ export default function AuthView() {
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const codigoValidacionId = useRef(0);
 
+  // Solicitud de código: para quien aún no tiene uno y necesita pedirlo desde la app
+  // (antes solo se compartía código por fuera, sin quedar registro de quién lo pidió).
+  const [ciudades, setCiudades] = useState([]);
+  const [mostrarSolicitud, setMostrarSolicitud] = useState(false);
+  const [solicitudEnviada, setSolicitudEnviada] = useState(false);
+  const [solicitudLoading, setSolicitudLoading] = useState(false);
+  const [solicitudError, setSolicitudError] = useState("");
+  const [solicitud, setSolicitud] = useState({ nombre:"", email:"", telefono:"", ciudad:"", centro_nombre:"", mensaje:"" });
+  const setSol = (k,v) => setSolicitud(s=>({...s,[k]:v}));
+
+  const abrirSolicitud = async () => {
+    setMostrarSolicitud(true);
+    setSolicitud(s=>({ ...s, nombre: s.nombre || form.nombre, email: s.email || form.email }));
+    if (ciudades.length === 0) {
+      const { data } = await supabase.from("ciudades").select("*").eq("activa", true).order("nombre");
+      setCiudades(data || []);
+    }
+  };
+
+  const enviarSolicitud = async e => {
+    e.preventDefault();
+    setSolicitudError(""); setSolicitudLoading(true);
+    const { error } = await supabase.rpc("solicitar_codigo_invitacion", {
+      p_nombre: solicitud.nombre.trim(), p_email: solicitud.email.trim(),
+      p_ciudad: solicitud.ciudad, p_telefono: solicitud.telefono.trim(),
+      p_centro_nombre: solicitud.centro_nombre.trim(), p_mensaje: solicitud.mensaje.trim(),
+    });
+    if (error) setSolicitudError(error.message);
+    else setSolicitudEnviada(true);
+    setSolicitudLoading(false);
+  };
+
   // Valida el código y resuelve la ciudad a la que quedará amarrado el centro
   // (el registro ya no pide la ciudad como texto libre: la fija el código).
   // Guardado contra condiciones de carrera: si el usuario cambia el código varias
@@ -164,8 +196,58 @@ export default function AuthView() {
                       {codigoInfo.estado==="validando" && <span className="hint">Verificando código...</span>}
                       {codigoInfo.estado==="valido" && <span className="hint" style={{color:"var(--green)"}}>✓ Código válido — tu centro se registrará en <strong>{codigoInfo.ciudad}</strong>.</span>}
                       {codigoInfo.estado==="invalido" && <span className="hint" style={{color:"var(--red)"}}>✕ Código inválido, usado o expirado.</span>}
-                      {codigoInfo.estado==="pendiente" && <span className="hint">Solicítalo al administrador de tu ciudad.</span>}
+                      {codigoInfo.estado==="pendiente" && !mostrarSolicitud && (
+                        <span className="hint">
+                          ¿No tienes código?{" "}
+                          <button type="button" onClick={abrirSolicitud}
+                            style={{background:"none",border:"none",padding:0,color:"var(--primary,#2563eb)",textDecoration:"underline",cursor:"pointer",font:"inherit"}}>
+                            Solicítalo aquí
+                          </button>
+                        </span>
+                      )}
                     </div>
+
+                    {mostrarSolicitud && (
+                      <div className="alert alert-info" style={{display:"flex",flexDirection:"column",gap:10}}>
+                        {solicitudEnviada ? (
+                          <span>✓ Solicitud enviada. El administrador de tu ciudad la revisará y te enviará el código a <strong>{solicitud.email}</strong>.</span>
+                        ) : (
+                          <>
+                            <strong style={{fontSize:12.5}}>Pedir código de invitación</strong>
+                            {solicitudError && <span className="hint" style={{color:"var(--red)"}}>⚠️ {solicitudError}</span>}
+                            <div className="field" style={{marginBottom:0}}>
+                              <label>Tu nombre</label>
+                              <input value={solicitud.nombre} onChange={e=>setSol("nombre",e.target.value)} required />
+                            </div>
+                            <div className="field" style={{marginBottom:0}}>
+                              <label>Tu correo</label>
+                              <input type="email" value={solicitud.email} onChange={e=>setSol("email",e.target.value)} required />
+                            </div>
+                            <div className="field" style={{marginBottom:0}}>
+                              <label>Ciudad</label>
+                              <select value={solicitud.ciudad} onChange={e=>setSol("ciudad",e.target.value)} required>
+                                <option value="">— Selecciona —</option>
+                                {ciudades.map(c=><option key={c.nombre} value={c.nombre}>{c.nombre}</option>)}
+                              </select>
+                            </div>
+                            <div className="field" style={{marginBottom:0}}>
+                              <label>Nombre del centro (opcional)</label>
+                              <input value={solicitud.centro_nombre} onChange={e=>setSol("centro_nombre",e.target.value)} />
+                            </div>
+                            <div className="field" style={{marginBottom:0}}>
+                              <label>Teléfono (opcional)</label>
+                              <input value={solicitud.telefono} onChange={e=>setSol("telefono",e.target.value)} placeholder="+52 998 000 0000"/>
+                            </div>
+                            <div style={{display:"flex",gap:8}}>
+                              <button type="button" className="btn btn-secondary btn-sm" onClick={()=>setMostrarSolicitud(false)}>Cancelar</button>
+                              <button type="button" className="btn btn-primary btn-sm" disabled={solicitudLoading || !solicitud.nombre.trim() || !solicitud.email.trim() || !solicitud.ciudad} onClick={enviarSolicitud}>
+                                {solicitudLoading?<><span className="spinner"/> Enviando...</>:"Enviar solicitud"}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                     <div className="field"><label>Nombre del centro<span className="req">*</span></label><input value={form.centro_nombre} onChange={e=>set("centro_nombre",e.target.value)} required placeholder="Ej: Centro de Acopio Norte Cancún"/></div>
                     <div className="grid-2">
                       <div className="field"><label>País</label><input value={form.pais} onChange={e=>set("pais",e.target.value)}/></div>
