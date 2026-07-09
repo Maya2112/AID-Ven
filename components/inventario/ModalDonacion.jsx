@@ -84,6 +84,7 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
         const { data: nuevoProd, error: errCat } = await supabase.from("catalogo_productos").insert({
           tipo_id: form.tipo_id,
           categoria_id: form.categoria_id,
+          centro_id: centroId,
           nombre: form.nombre_producto,
           es_medicamento: esMed,
           presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
