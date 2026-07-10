@@ -9,7 +9,6 @@ export default function AdminView({ usuario }) {
   const miCiudad = usuario?.ciudad_asignada || null;
 
   const [centros, setCentros] = useState([]);
-  const [pendientesCatalogo, setPendientesCatalogo] = useState([]);
   const [duplicados, setDuplicados] = useState([]);
   const [codigos, setCodigos] = useState([]);
   const [ciudades, setCiudades] = useState([]);
@@ -35,11 +34,6 @@ export default function AdminView({ usuario }) {
     else setCentros(data||[]);
     setLoading(false);
   }, [esAdminCiudad, miCiudad]);
-  const fetchPendientesCatalogo = useCallback(async () => {
-    const { data, error: err } = await supabase.from("vista_moderacion_pendientes").select("*");
-    if (err) setError("No se pudieron cargar las propuestas pendientes: " + err.message);
-    else setPendientesCatalogo(data||[]);
-  }, []);
   const fetchDuplicados = useCallback(async () => {
     const { data, error: err } = await supabase.rpc("admin_detectar_centros_duplicados");
     if (err) setError("No se pudieron detectar duplicados: " + err.message);
@@ -71,21 +65,13 @@ export default function AdminView({ usuario }) {
 
   useEffect(()=>{
     fetchCentros(); fetchCodigos(); fetchCiudades(); fetchSolicitudes();
-    if (esSuperAdmin) { fetchPendientesCatalogo(); fetchDuplicados(); fetchAdmins(); }
-  },[fetchCentros, fetchCodigos, fetchCiudades, fetchSolicitudes, fetchPendientesCatalogo, fetchDuplicados, fetchAdmins, esSuperAdmin]);
+    if (esSuperAdmin) { fetchDuplicados(); fetchAdmins(); }
+  },[fetchCentros, fetchCodigos, fetchCiudades, fetchSolicitudes, fetchDuplicados, fetchAdmins, esSuperAdmin]);
 
   const cambiarEstado = async (id,estado) => {
     const { error: err } = await supabase.rpc("cambiar_estado_centro",{p_centro_id:id,p_estado:estado});
     if (err) { alert("No se pudo cambiar el estado del centro: " + err.message); return; }
     fetchCentros();
-  };
-
-  const moderarItem = async (clase, id, estado) => {
-    const { error: err } = clase === "tipo"
-      ? await supabase.rpc("moderar_tipo_producto", {p_id:id, p_estado:estado})
-      : await supabase.rpc("moderar_categoria", {p_id:id, p_estado:estado});
-    if (err) { alert("No se pudo moderar: " + err.message); return; }
-    fetchPendientesCatalogo();
   };
 
   const fusionar = async (idDuplicado, idCorrecto, nombreDuplicado) => {
@@ -160,7 +146,6 @@ export default function AdminView({ usuario }) {
       {error && <div className="alert alert-error mb-4">⚠️ {error}</div>}
       {esSuperAdmin && duplicados.length>0&&<div className="alert alert-error mb-4">⚠️ <strong>{duplicados.length}</strong> posible{duplicados.length>1?"s":""} centro{duplicados.length>1?"s":""} duplicado{duplicados.length>1?"s":""} detectado{duplicados.length>1?"s":""} por nombre similar.</div>}
       {pendientes.length>0&&<div className="alert alert-warning mb-4">⏳ <strong>{pendientes.length}</strong> centro{pendientes.length>1?"s":""} pendiente{pendientes.length>1?"s":""} de aprobación.</div>}
-      {esSuperAdmin && pendientesCatalogo.length>0&&<div className="alert alert-warning mb-4">🏷️ <strong>{pendientesCatalogo.length}</strong> tipo{pendientesCatalogo.length>1?"s":""}/categoría{pendientesCatalogo.length>1?"s":""} de producto pendiente{pendientesCatalogo.length>1?"s":""} de revisión.</div>}
 
       {esSuperAdmin && (
         <div className="card mb-4">
@@ -317,35 +302,6 @@ export default function AdminView({ usuario }) {
           </div>
           <div style={{padding:"10px 20px",fontSize:11.5,color:"var(--slate-500)"}}>
             &ldquo;Fusionar A → B&rdquo; mueve todas las donaciones y cajas de A hacia B, y suspende A. Revisa bien antes de confirmar.
-          </div>
-        </div>
-      )}
-
-      {esSuperAdmin && (
-        <div className="card mb-4">
-          <div className="card-header"><h3>Tipos y Categorías Pendientes ({pendientesCatalogo.length})</h3></div>
-          <div className="table-wrap">
-            {pendientesCatalogo.length===0 ? <div className="empty-state" style={{padding:30}}><p className="text-muted">✓ No hay propuestas pendientes</p></div> : (
-              <table>
-                <thead><tr><th>Tipo</th><th>Nombre</th><th>Pertenece a</th><th>Descripción</th><th>Centro que lo propuso</th><th>Fecha</th><th>Acción</th></tr></thead>
-                <tbody>
-                  {pendientesCatalogo.map(p=>(
-                    <tr key={`${p.clase}-${p.id}`}>
-                      <td><span className="badge badge-blue">{p.clase==="tipo"?"Tipo":"Categoría"}</span></td>
-                      <td style={{fontWeight:600}}>{p.nombre}</td>
-                      <td style={{fontSize:12}}>{p.tipo_padre_nombre||"—"}</td>
-                      <td style={{fontSize:12,maxWidth:220}}>{p.descripcion||"—"}</td>
-                      <td style={{fontSize:12}}>{p.centro_nombre||"—"}</td>
-                      <td style={{fontSize:12,whiteSpace:"nowrap"}}>{new Date(p.created_at).toLocaleDateString("es-MX")}</td>
-                      <td><div style={{display:"flex",gap:8}}>
-                        <button className="btn btn-success btn-sm" onClick={()=>moderarItem(p.clase,p.id,"aprobado")}>✓ Aprobar</button>
-                        <button className="btn btn-danger btn-sm" onClick={()=>moderarItem(p.clase,p.id,"rechazado")}>✕ Rechazar</button>
-                      </div></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
           </div>
         </div>
       )}

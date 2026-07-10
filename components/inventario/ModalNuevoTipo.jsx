@@ -28,8 +28,7 @@ export default function ModalNuevoTipo({ onClose, onCreated, esAdmin }) {
           <div className="modal-header"><h2>Propuesta enviada</h2><button className="modal-close" onClick={onClose}>✕</button></div>
           <div className="modal-body">
             <div className="alert alert-success">
-              ✓ Ya puedes usar <strong>{nombre}</strong> para tus donaciones. Quedó en revisión por el administrador;
-              una vez aprobado será visible para todos los centros.
+              ✓ Ya puedes usar <strong>{nombre}</strong> para tus donaciones. Queda disponible solo para tu centro.
             </div>
           </div>
           <div className="modal-footer">
@@ -52,7 +51,7 @@ export default function ModalNuevoTipo({ onClose, onCreated, esAdmin }) {
           <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
             {esAdmin
               ? "Este tipo quedará disponible inmediatamente para todos los centros de acopio."
-              : "Podrás usarlo de inmediato en tu centro. Quedará pendiente de aprobación para que se muestre también a los demás centros."}
+              : "Podrás usarlo de inmediato en tu centro. Queda privado: no se comparte con los demás centros."}
           </div>
           <div className="field mb-3">
             <label>Nombre <span className="req">*</span></label>

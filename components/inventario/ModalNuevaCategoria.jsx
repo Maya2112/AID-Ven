@@ -29,8 +29,7 @@ export default function ModalNuevaCategoria({ onClose, onCreated, tipoId, tipoNo
           <div className="modal-header"><h2>Propuesta enviada</h2><button className="modal-close" onClick={onClose}>✕</button></div>
           <div className="modal-body">
             <div className="alert alert-success">
-              ✓ Ya puedes usar <strong>{nombre}</strong> dentro de {tipoNombre} para tus donaciones. Quedó en revisión
-              por el administrador; una vez aprobada será visible para todos los centros.
+              ✓ Ya puedes usar <strong>{nombre}</strong> dentro de {tipoNombre} para tus donaciones. Queda disponible solo para tu centro.
             </div>
           </div>
           <div className="modal-footer">
@@ -53,7 +52,7 @@ export default function ModalNuevaCategoria({ onClose, onCreated, tipoId, tipoNo
           <div className="alert alert-info mb-4" style={{fontSize:12.5}}>
             {esAdmin
               ? <>Esta categoría se agregará dentro de <strong>{tipoNombre}</strong> y quedará disponible inmediatamente para todos los centros.</>
-              : <>Esta categoría se agregará dentro de <strong>{tipoNombre}</strong>. Podrás usarla de inmediato; quedará pendiente de aprobación para mostrarse también a los demás centros.</>}
+              : <>Esta categoría se agregará dentro de <strong>{tipoNombre}</strong>. Podrás usarla de inmediato; queda privada, no se comparte con los demás centros.</>}
           </div>
           <div className="field mb-3">
             <label>Nombre <span className="req">*</span></label>
