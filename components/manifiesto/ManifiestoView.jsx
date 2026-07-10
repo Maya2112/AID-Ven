@@ -12,6 +12,7 @@ export default function ManifiestoView({ centro, esAdmin }) {
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("listo_para_envio");
   const [exportandoPDF, setExportandoPDF] = useState(false);
+  const [descartadas, setDescartadas] = useState(new Set()); // ids de cajas excluidas del manifiesto (solo modo "real")
 
   const fetchManifiesto = useCallback(async () => {
     setLoading(true);
@@ -45,12 +46,26 @@ export default function ManifiestoView({ centro, esAdmin }) {
 
   const data = modo === "estimado" ? dataEstimado : dataReal;
   const filtrados = filtroEstado==="all" ? data : data.filter(d=>d.estado===filtroEstado);
+
+  // Selección de cajas a incluir en el manifiesto (solo modo "real" — trabaja por caja).
+  // Se modela como exclusión (opt-out): por defecto todas las que pasan el filtro de
+  // estado van incluidas, y el usuario desmarca las que no quiere llevar en este envío.
+  // Así una caja nueva que llega por realtime (u otro cambio de datos) entra incluida
+  // automáticamente, sin necesitar un efecto que reconstruya la selección y sin riesgo
+  // de borrar en silencio lo que el usuario ya había desmarcado.
+  const toggleSeleccion = id => setDescartadas(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const incluidos = modo === "real" ? filtrados.filter(d=>!descartadas.has(d.id)) : filtrados;
   const totalPeso = modo === "estimado"
-    ? filtrados.reduce((s,d)=>s+(parseFloat(d.peso_total_kg)||0),0)
-    : filtrados.reduce((s,d)=>s+(parseFloat(d.peso_kg)||0),0);
+    ? incluidos.reduce((s,d)=>s+(parseFloat(d.peso_total_kg)||0),0)
+    : incluidos.reduce((s,d)=>s+(parseFloat(d.peso_kg)||0),0);
   const totalVol = modo === "estimado"
-    ? filtrados.reduce((s,d)=>s+(parseFloat(d.volumen_total_m3)||0),0)
-    : filtrados.reduce((s,d)=>s+(parseFloat(d.volumen_m3)||0),0);
+    ? incluidos.reduce((s,d)=>s+(parseFloat(d.volumen_total_m3)||0),0)
+    : incluidos.reduce((s,d)=>s+(parseFloat(d.volumen_m3)||0),0);
 
   const tituloAlcance = alcance === "global" ? "Todos los centros aprobados" : `${centro.nombre} → Venezuela`;
   const nombreArchivo = alcance === "global" ? "global" : centro.nombre.replace(/\s+/g,"_");
@@ -60,10 +75,10 @@ export default function ManifiestoView({ centro, esAdmin }) {
     const incluyeCentro = alcance === "global";
     if (modo === "estimado") {
       headers=[...(incluyeCentro?["Centro"]:[]),"Tipo","Categoría","Producto","Presentación","Unidad","Talla","Cantidad","Uds.Mín.","Peso Unit.(kg)","Peso Total(kg)","Vol.Total(m³)","Estado","Fecha","Observaciones"];
-      rows=filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.presentacion_mg||"",d.unidad,d.talla||"",d.cantidad_total,d.total_unidades_minimas||"",d.peso_unitario_kg??"",d.peso_total_kg??"",d.volumen_total_m3??"",d.estado,d.fecha_ingreso,d.observaciones||""]);
+      rows=incluidos.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.presentacion_mg||"",d.unidad,d.talla||"",d.cantidad_total,d.total_unidades_minimas||"",d.peso_unitario_kg??"",d.peso_total_kg??"",d.volumen_total_m3??"",d.estado,d.fecha_ingreso,d.observaciones||""]);
     } else {
       headers=[...(incluyeCentro?["Centro"]:[]),"Caja","Tipo","Categoría","Contenido","Largo(cm)","Ancho(cm)","Alto(cm)","Volumen(m³)","Peso(kg)","Estado","Fecha Empaque","Observaciones"];
-      rows=filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.numero_caja||"",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"",d.largo_cm||"",d.ancho_cm||"",d.alto_cm||"",d.volumen_m3||"",d.peso_kg,d.estado,d.fecha_empaque,d.observaciones||""]);
+      rows=incluidos.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.numero_caja||"",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"",d.largo_cm||"",d.ancho_cm||"",d.alto_cm||"",d.volumen_m3||"",d.peso_kg,d.estado,d.fecha_empaque,d.observaciones||""]);
     }
     const csv=[headers,...rows].map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
     const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
@@ -90,7 +105,7 @@ export default function ManifiestoView({ centro, esAdmin }) {
         logoDataUrl,
       });
       y = dibujarStatsPDF(doc, y, [
-        { label: "Líneas", value: filtrados.length, color: [37,99,235] },
+        { label: "Líneas", value: incluidos.length, color: [37,99,235] },
         { label: modo==="real"?"Peso real (kg)":"Peso bruto (kg)", value: totalPeso.toFixed(2), color: [217,119,6] },
         { label: "Volumen (m³)", value: totalVol.toFixed(4), color: [15,31,61] },
       ]);
@@ -99,10 +114,10 @@ export default function ManifiestoView({ centro, esAdmin }) {
       let headers, rows;
       if (modo === "estimado") {
         headers = [...(incluyeCentro?["Centro"]:[]),"Tipo","Categoría","Producto","Unidad","Cantidad","Peso (kg)","Vol (m³)"];
-        rows = filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.unidad,d.cantidad_total,parseFloat(d.peso_total_kg||0).toFixed(2),parseFloat(d.volumen_total_m3||0).toFixed(4)]);
+        rows = incluidos.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.unidad,d.cantidad_total,parseFloat(d.peso_total_kg||0).toFixed(2),parseFloat(d.volumen_total_m3||0).toFixed(4)]);
       } else {
         headers = [...(incluyeCentro?["Centro"]:[]),"Caja","Tipo","Categoría","Contenido","Peso (kg)","Vol (m³)"];
-        rows = filtrados.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.numero_caja||"—",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"—",parseFloat(d.peso_kg||0).toFixed(2),d.volumen_m3?parseFloat(d.volumen_m3).toFixed(4):"—"]);
+        rows = incluidos.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.numero_caja||"—",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"—",parseFloat(d.peso_kg||0).toFixed(2),d.volumen_m3?parseFloat(d.volumen_m3).toFixed(4):"—"]);
       }
       doc.autoTable({
         startY: y, head: [headers], body: rows,
@@ -125,8 +140,8 @@ export default function ManifiestoView({ centro, esAdmin }) {
       <div className="page-header">
         <div className="page-header-text"><h2>Manifiesto de Carga</h2><p>Listado para aerolíneas, aduana y logística</p></div>
         <div className="flex gap-2">
-          <button className="btn btn-secondary" onClick={exportCSV} disabled={filtrados.length===0}>↓ CSV</button>
-          <button className="btn btn-success" onClick={exportPDF} disabled={filtrados.length===0 || exportandoPDF}>
+          <button className="btn btn-secondary" onClick={exportCSV} disabled={incluidos.length===0}>↓ CSV</button>
+          <button className="btn btn-success" onClick={exportPDF} disabled={incluidos.length===0 || exportandoPDF}>
             {exportandoPDF ? <><span className="spinner"/> Generando...</> : "↓ Exportar PDF"}
           </button>
         </div>
@@ -166,9 +181,16 @@ export default function ManifiestoView({ centro, esAdmin }) {
           <div style={{display:"flex",gap:12}}>
             <div className="stat-card accent-amber" style={{padding:"10px 16px",minWidth:110}}><div className="stat-label">Peso {modo==="real"?"real":"bruto"}</div><div className="stat-value" style={{fontSize:18}}>{totalPeso.toFixed(2)} kg</div></div>
             <div className="stat-card accent-navy" style={{padding:"10px 16px",minWidth:110}}><div className="stat-label">Volumen</div><div className="stat-value" style={{fontSize:18}}>{totalVol.toFixed(4)} m³</div></div>
-            <div className="stat-card accent-blue" style={{padding:"10px 16px",minWidth:80}}><div className="stat-label">Líneas</div><div className="stat-value" style={{fontSize:18}}>{filtrados.length}</div></div>
+            <div className="stat-card accent-blue" style={{padding:"10px 16px",minWidth:80}}><div className="stat-label">{modo==="real"?"Cajas incluidas":"Líneas"}</div><div className="stat-value" style={{fontSize:18}}>{incluidos.length}{modo==="real"?`/${filtrados.length}`:""}</div></div>
           </div>
         </div>
+        {modo === "real" && filtrados.length>0 && (
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setDescartadas(new Set())}>Seleccionar todas</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setDescartadas(new Set(filtrados.map(d=>d.id)))}>Ninguna</button>
+            <span className="hint" style={{alignSelf:"center"}}>Marca qué cajas van en este manifiesto.</span>
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -206,10 +228,11 @@ export default function ManifiestoView({ centro, esAdmin }) {
             </table>
           ) : (
             <table>
-              <thead><tr>{alcance==="global"&&<th>Centro</th>}<th>#</th><th>Caja</th><th>Tipo</th><th>Categoría</th><th>Contenido</th><th>Dimensiones</th><th>Volumen</th><th>Peso Real</th></tr></thead>
+              <thead><tr><th></th>{alcance==="global"&&<th>Centro</th>}<th>#</th><th>Caja</th><th>Tipo</th><th>Categoría</th><th>Contenido</th><th>Dimensiones</th><th>Volumen</th><th>Peso Real</th></tr></thead>
               <tbody>
                 {filtrados.map((d,i)=>(
-                  <tr key={d.id}>
+                  <tr key={d.id} style={{opacity: descartadas.has(d.id) ? 0.45 : 1}}>
+                    <td><input type="checkbox" checked={!descartadas.has(d.id)} onChange={()=>toggleSeleccion(d.id)}/></td>
                     {alcance==="global"&&<td style={{fontSize:12,fontWeight:500}}>{d.centro_nombre}</td>}
                     <td style={{color:"var(--slate-400)",fontSize:11}}>{i+1}</td>
                     <td style={{fontWeight:600}}>{d.numero_caja||"—"}</td>
@@ -222,7 +245,7 @@ export default function ManifiestoView({ centro, esAdmin }) {
                   </tr>
                 ))}
                 <tr style={{background:"var(--slate-50)",fontWeight:700}}>
-                  <td colSpan={alcance==="global"?7:6} style={{textAlign:"right",color:"var(--navy)",paddingRight:16}}>TOTALES</td>
+                  <td colSpan={alcance==="global"?8:7} style={{textAlign:"right",color:"var(--navy)",paddingRight:16}}>TOTALES (seleccionadas)</td>
                   <td style={{color:"var(--navy)"}}>{totalVol.toFixed(5)} m³</td>
                   <td style={{color:"var(--navy)"}}>{totalPeso.toFixed(3)} kg</td>
                 </tr>

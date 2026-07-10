@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Ico from "@/components/ui/Ico";
 import EstadoBadge from "@/components/ui/EstadoBadge";
-import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF, cargarImagenComoDataURL } from "@/lib/pdf";
+import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsGrandesPDF, dibujarPiePDF, cargarImagenComoDataURL } from "@/lib/pdf";
 import { NAVY_RGB } from "@/lib/constants";
 
 export default function ResumenCentroView({ centro, tipos }) {
@@ -13,6 +13,7 @@ export default function ResumenCentroView({ centro, tipos }) {
   const [loading, setLoading] = useState(true);
   const [expandidos, setExpandidos] = useState({});
   const [exportando, setExportando] = useState(false);
+  const [exportandoCajas, setExportandoCajas] = useState(false);
 
   const fetchResumen = useCallback(async () => {
     setLoading(true);
@@ -62,12 +63,58 @@ export default function ResumenCentroView({ centro, tipos }) {
         fuenteLabel: modo === "donaciones" ? "Estimado (donaciones)" : "Real (cajas embaladas)",
         logoDataUrl,
       });
-      y = dibujarStatsPDF(doc, y, [
-        { label: modo==="donaciones"?"Total unidades":"Total cajas", value: totalCant.toLocaleString(), color: [37,99,235] },
-        { label: "Peso total (kg)", value: totalPeso.toFixed(1), color: [217,119,6] },
-        { label: "Volumen (m³)", value: totalVol.toFixed(3), color: [15,31,61] },
-        { label: "Tipos con stock", value: Object.keys(porTipo).length, color: [5,150,105] },
+
+      // Portada: números grandes + desglose de peso por tipo, igual que el
+      // resumen ejecutivo que se comparte con aerolíneas/donantes.
+      y = dibujarStatsGrandesPDF(doc, y, [
+        { label: "Toneladas", value: (totalPeso/1000).toFixed(1), color: [37,99,235] },
+        { label: modo==="donaciones"?"Unidades":"Cajas", value: totalCant.toLocaleString(), color: [217,119,6] },
       ]);
+      doc.setFontSize(9);
+      doc.setTextColor(...NAVY_RGB);
+      doc.setFont(undefined, "bold");
+      doc.text(
+        `Peso total aproximado: ${totalPeso.toLocaleString(undefined,{maximumFractionDigits:1})} kg · ${totalCant.toLocaleString()} ${modo==="donaciones"?"unidades":"cajas"} · ${totalVol.toFixed(2)} m³ · ${Object.keys(porTipo).length} tipos con stock`,
+        14, y
+      );
+      y += 6;
+
+      const paginasAntesDeLaTabla = doc.internal.getNumberOfPages();
+      const pesoPorTipo = Object.values(porTipo)
+        .map(g => ({ nombre: g.nombre, peso: g.items.reduce((s,r)=>s+(parseFloat(r.peso_total_kg)||0),0) }))
+        .sort((a,b) => b.peso - a.peso);
+      doc.autoTable({
+        startY: y, head: [["Qué es","Peso"]],
+        body: pesoPorTipo.map(t => [t.nombre, `${t.peso.toLocaleString(undefined,{maximumFractionDigits:0})} kg`]),
+        theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
+        bodyStyles: { fontSize: 8.5 }, alternateRowStyles: { fillColor: [248,250,252] },
+        columnStyles: { 1: { halign: "right" } },
+        margin: { left: 14, right: 14 },
+        foot: [["TOTAL", `${totalPeso.toLocaleString(undefined,{maximumFractionDigits:0})} kg`]],
+        footStyles: { fillColor: [220,230,241], textColor: NAVY_RGB, fontStyle: "bold", fontSize: 8.5, halign: "right" },
+      });
+      doc.setFontSize(7.5);
+      doc.setTextColor(148,163,184);
+      doc.setFont(undefined, "normal");
+      const notaY = doc.lastAutoTable.finalY + 6;
+      doc.text("Pesos aproximados, solo de referencia. El detalle completo, partida por partida, está en las páginas siguientes.", 14, notaY);
+
+      // Detalle: la tabla completa desglosada por tipo y categoría, en página aparte.
+      // Si la tabla de portada ya se desbordó sola a una página nueva (autoTable la
+      // paginó), no forzamos otro salto encima — seguimos en esa misma página para
+      // no dejar una página casi vacía de más.
+      let y2;
+      if (doc.internal.getNumberOfPages() === paginasAntesDeLaTabla) {
+        doc.addPage();
+        y2 = 20;
+      } else {
+        y2 = notaY + 10;
+      }
+      doc.setFontSize(12);
+      doc.setTextColor(...NAVY_RGB);
+      doc.setFont(undefined, "bold");
+      doc.text("Detalle por tipo y categoría", 14, y2);
+      y2 += 6;
 
       const rows = [];
       Object.values(porTipo).forEach(grupo => {
@@ -84,7 +131,7 @@ export default function ResumenCentroView({ centro, tipos }) {
         : [["Tipo","Categoría","Cajas","Peso (kg)","Volumen (m³)","Listas p/envío"]];
 
       doc.autoTable({
-        startY: y, head: headers, body: rows,
+        startY: y2, head: headers, body: rows,
         theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
         bodyStyles: { fontSize: 8.5 }, alternateRowStyles: { fillColor: [248,250,252] },
         margin: { left: 14, right: 14 },
@@ -97,13 +144,91 @@ export default function ResumenCentroView({ centro, tipos }) {
     setExportando(false);
   };
 
+  // Detallado por caja: cada caja con su lista de productos (como el manifiesto
+  // que se entrega a aerolíneas/aduana), más un bloque final de lo que aún no
+  // se ha empacado (donaciones sin caja asignada = "inventario a granel").
+  const exportarDetalladoCajas = async () => {
+    setExportandoCajas(true);
+    try {
+      const [jsPDF, logoDataUrl, { data: cajas, error: errCajas }, { data: donaciones, error: errDonaciones }] = await Promise.all([
+        cargarJsPDF(),
+        centro.logo_url ? cargarImagenComoDataURL(centro.logo_url) : Promise.resolve(null),
+        supabase.from("cajas_embalaje").select("*").eq("centro_id", centro.id).order("numero_caja"),
+        supabase.from("donaciones").select("*").eq("centro_id", centro.id).order("created_at"),
+      ]);
+      if (errCajas || errDonaciones) {
+        alert("No se pudo generar el PDF: " + (errCajas?.message || errDonaciones?.message));
+        setExportandoCajas(false);
+        return;
+      }
+
+      const porCaja = {};
+      (donaciones||[]).forEach(d => {
+        const key = d.caja_id || "_granel";
+        if (!porCaja[key]) porCaja[key] = [];
+        porCaja[key].push(d);
+      });
+
+      // Las filas de encabezado de caja se distinguen de las de producto por su propia
+      // forma (col. Producto vacía) — no hace falta llevar un índice aparte sincronizado.
+      const body = [];
+      const agregarBloque = (etiqueta, pesoTotal, items) => {
+        body.push([etiqueta, "", "", "", `${pesoTotal.toFixed(1)} kg`]);
+        items.forEach(d => {
+          body.push(["", d.nombre_producto, d.cantidad_total?.toLocaleString()||"", d.unidad||"", parseFloat(d.peso_total_kg||0).toFixed(2)]);
+        });
+      };
+
+      (cajas||[]).forEach(c => {
+        const items = porCaja[c.id] || [];
+        const tieneNumero = c.numero_caja != null && c.numero_caja !== "";
+        agregarBloque(tieneNumero ? `CAJA ${c.numero_caja}` : "CAJA (sin número)", parseFloat(c.peso_kg||0), items);
+      });
+      const granel = porCaja["_granel"] || [];
+      if (granel.length > 0) {
+        const pesoGranel = granel.reduce((s,d)=>s+(parseFloat(d.peso_total_kg)||0),0);
+        agregarBloque("INVENTARIO A GRANEL (sin caja)", pesoGranel, granel);
+      }
+
+      const doc = new jsPDF();
+      let y = dibujarEncabezadoPDF(doc, {
+        titulo: "Detallado por Caja",
+        subtitulo: centro.nombre,
+        fuenteLabel: `${(cajas||[]).length} cajas${granel.length?" + inventario a granel":""}`,
+        logoDataUrl,
+      });
+      doc.autoTable({
+        startY: y, head: [["Caja","Producto","Cant.","Unidad","Peso (kg)"]], body,
+        theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
+        bodyStyles: { fontSize: 8 }, margin: { left: 14, right: 14 },
+        didParseCell: (d) => {
+          if (d.section === "body" && d.row.raw[1] === "") {
+            d.cell.styles.fillColor = [220,230,241];
+            d.cell.styles.textColor = NAVY_RGB;
+            d.cell.styles.fontStyle = "bold";
+          }
+        },
+      });
+      dibujarPiePDF(doc, `AcopioVen · ${centro.nombre} · Detallado por caja`);
+      doc.save(`detallado_cajas_${centro.nombre.replace(/\s+/g,"_")}.pdf`);
+    } catch(e) {
+      alert("No se pudo generar el PDF. Revisa tu conexión e intenta de nuevo.");
+    }
+    setExportandoCajas(false);
+  };
+
   return (
     <div className="content">
       <div className="page-header">
         <div className="page-header-text"><h2>Resumen de mi Centro</h2><p>Conteo consolidado de {centro.nombre}</p></div>
-        <button className="btn btn-success" onClick={exportarPDF} disabled={exportando || loading}>
-          {exportando ? <><span className="spinner"/> Generando...</> : "↓ Exportar PDF"}
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-secondary" onClick={exportarDetalladoCajas} disabled={exportandoCajas || loading}>
+            {exportandoCajas ? <><span className="spinner"/> Generando...</> : "↓ Detallado por Caja"}
+          </button>
+          <button className="btn btn-success" onClick={exportarPDF} disabled={exportando || loading}>
+            {exportando ? <><span className="spinner"/> Generando...</> : "↓ Exportar PDF"}
+          </button>
+        </div>
       </div>
 
       <div className="type-tabs mb-4">
