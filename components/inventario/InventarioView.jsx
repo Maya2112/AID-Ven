@@ -13,6 +13,7 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
   const [filtroEstado, setFiltroEstado] = useState("all");
   const [busqueda, setBusqueda] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [editando, setEditando] = useState(null);
   const [asignandoCaja, setAsignandoCaja] = useState(null);
   const [error, setError] = useState("");
 
@@ -128,7 +129,12 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
                         <option value="enviado">Enviado</option>
                       </select>
                     </td>
-                    <td><button className="btn btn-ghost btn-sm" onClick={()=>eliminar(d.id)}>🗑</button></td>
+                    <td>
+                      <div style={{display:"flex",gap:4}}>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setEditando(d)}>✏️</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>eliminar(d.id)}>🗑</button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -136,7 +142,15 @@ export default function InventarioView({ centro, tipos, categorias, tiposParaCap
           )}
         </div>
       </div>
-      {showModal&&<ModalDonacion onClose={()=>setShowModal(false)} onSaved={()=>{setShowModal(false);fetchAll();}} tipos={tiposParaCaptura} categorias={categoriasParaCaptura} catalogo={catalogo} centroId={centro.id} onCatalogoChange={onCatalogoChange} esAdmin={esAdmin}/>}
+      {(showModal||editando)&&(
+        <ModalDonacion
+          onClose={()=>{setShowModal(false);setEditando(null);}}
+          onSaved={()=>{setShowModal(false);setEditando(null);fetchAll();}}
+          tipos={tiposParaCaptura} categorias={categoriasParaCaptura} catalogo={catalogo}
+          centroId={centro.id} onCatalogoChange={onCatalogoChange} esAdmin={esAdmin}
+          donacionExistente={editando}
+        />
+      )}
       {asignandoCaja&&(
         <ModalAsignarCaja
           donacion={asignandoCaja}

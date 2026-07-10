@@ -7,13 +7,25 @@ import Ico from "@/components/ui/Ico";
 import ModalNuevoTipo from "./ModalNuevoTipo";
 import ModalNuevaCategoria from "./ModalNuevaCategoria";
 
-export default function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId, onCatalogoChange, esAdmin }) {
+export default function ModalDonacion({ onClose, onSaved, tipos, categorias, catalogo, centroId, onCatalogoChange, esAdmin, donacionExistente }) {
   const [form, setForm] = useState({
-    tipo_id:"", categoria_id:"", catalogo_id:"", nombre_producto:"", presentacion_mg:"",
-    unidad:"unidad", cantidad_total:"", unidades_nivel2:"", unidades_nivel3:"",
-    tipo_frasco:"", volumen_ml_frasco:"",
-    talla:"", peso_unitario_kg:"", numero_caja:"",
-    estado:"recibido", fecha_ingreso:new Date().toISOString().split("T")[0], observaciones:""
+    tipo_id: donacionExistente?.tipo_id || "",
+    categoria_id: donacionExistente?.categoria_id || "",
+    catalogo_id: donacionExistente?.catalogo_id || "",
+    nombre_producto: donacionExistente?.nombre_producto || "",
+    presentacion_mg: donacionExistente?.presentacion_mg || "",
+    unidad: donacionExistente?.unidad || "unidad",
+    cantidad_total: donacionExistente?.cantidad_total != null ? String(donacionExistente.cantidad_total) : "",
+    unidades_nivel2: donacionExistente?.unidades_nivel2 != null ? String(donacionExistente.unidades_nivel2) : "",
+    unidades_nivel3: donacionExistente?.unidades_nivel3 != null ? String(donacionExistente.unidades_nivel3) : "",
+    tipo_frasco: donacionExistente?.tipo_frasco || "",
+    volumen_ml_frasco: donacionExistente?.volumen_ml_frasco != null ? String(donacionExistente.volumen_ml_frasco) : "",
+    talla: donacionExistente?.talla || "",
+    peso_unitario_kg: donacionExistente?.peso_unitario_kg != null ? String(donacionExistente.peso_unitario_kg) : "",
+    numero_caja:"",
+    estado: donacionExistente?.estado || "recibido",
+    fecha_ingreso: donacionExistente?.fecha_ingreso || new Date().toISOString().split("T")[0],
+    observaciones: donacionExistente?.observaciones || ""
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -100,19 +112,10 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
         if (nuevoProd) catalogoId = nuevoProd.id;
       }
 
-      // Si se indicó número de caja: se busca (o se crea) la caja de embalaje
-      // correspondiente para que la donación quede vinculada a ella.
-      const { cajaId, error: errCaja } = await buscarOCrearCaja({
-        centroId, numeroCaja: form.numero_caja, tipoId: form.tipo_id, categoriaId: form.categoria_id,
-      });
-      if (errCaja) { setError("No se pudo asociar la caja: " + errCaja.message); setLoading(false); return; }
-
-      const { error: err } = await supabase.from("donaciones").insert({
-        centro_id: centroId,
+      const datosDonacion = {
         tipo_id: form.tipo_id,
         categoria_id: form.categoria_id,
         catalogo_id: catalogoId,
-        caja_id: cajaId,
         nombre_producto: form.nombre_producto,
         presentacion_mg: esMed ? (form.presentacion_mg||null) : null,
         unidad: form.unidad,
@@ -126,8 +129,25 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
         estado: form.estado,
         fecha_ingreso: form.fecha_ingreso,
         observaciones: form.observaciones||null,
-      });
-      if (err) { setError(err.message); setLoading(false); return; }
+      };
+
+      if (donacionExistente) {
+        // La caja (si tiene) se administra aparte, con "asignar caja" o desde Editar Caja.
+        const { error: err } = await supabase.from("donaciones").update(datosDonacion).eq("id", donacionExistente.id);
+        if (err) { setError(err.message); setLoading(false); return; }
+      } else {
+        // Si se indicó número de caja: se busca (o se crea) la caja de embalaje
+        // correspondiente para que la donación quede vinculada a ella.
+        const { cajaId, error: errCaja } = await buscarOCrearCaja({
+          centroId, numeroCaja: form.numero_caja, tipoId: form.tipo_id, categoriaId: form.categoria_id,
+        });
+        if (errCaja) { setError("No se pudo asociar la caja: " + errCaja.message); setLoading(false); return; }
+
+        const { error: err } = await supabase.from("donaciones").insert({
+          centro_id: centroId, caja_id: cajaId, ...datosDonacion,
+        });
+        if (err) { setError(err.message); setLoading(false); return; }
+      }
       if (onCatalogoChange) onCatalogoChange();
       onSaved();
     } catch (e) {
@@ -140,7 +160,7 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h2>Registrar Donación</h2>
+          <h2>{donacionExistente ? "Editar Donación" : "Registrar Donación"}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
@@ -291,17 +311,21 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
               </div>
             </div>
 
-            <div className="section-label">Empaque (opcional)</div>
-            <div className="form-grid mb-4">
-              <div className="field">
-                <label>Número/código de caja</label>
-                <input value={form.numero_caja} onChange={e=>set("numero_caja",e.target.value)} placeholder="Ej: CAJA-01"/>
-                <span className="hint">
-                  Si ya guardaste esta donación en una caja física, escribe su número — si
-                  es nuevo se crea la caja automáticamente; si ya existe, la donación se suma a ella.
-                </span>
-              </div>
-            </div>
+            {!donacionExistente && (
+              <>
+                <div className="section-label">Empaque (opcional)</div>
+                <div className="form-grid mb-4">
+                  <div className="field">
+                    <label>Número/código de caja</label>
+                    <input value={form.numero_caja} onChange={e=>set("numero_caja",e.target.value)} placeholder="Ej: CAJA-01"/>
+                    <span className="hint">
+                      Si ya guardaste esta donación en una caja física, escribe su número — si
+                      es nuevo se crea la caja automáticamente; si ya existe, la donación se suma a ella.
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="section-label">Estado y Observaciones</div>
             <div className="form-grid">
@@ -326,7 +350,7 @@ export default function ModalDonacion({ onClose, onSaved, tipos, categorias, cat
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
-            {loading?<><span className="spinner"/> Guardando...</>:"Guardar Donación"}
+            {loading?<><span className="spinner"/> Guardando...</>:donacionExistente?"Guardar Cambios":"Guardar Donación"}
           </button>
         </div>
       </div>
