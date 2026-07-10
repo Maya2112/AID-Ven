@@ -2,6 +2,9 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+// Detecta si el nombre ya trae su propio emoji, para no duplicarlo con el ícono de caja por defecto.
+const contieneEmoji = texto => /\p{Extended_Pictographic}/u.test(texto);
+
 export default function ModalNuevoTipo({ onClose, onCreated, esAdmin }) {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
@@ -14,7 +17,7 @@ export default function ModalNuevoTipo({ onClose, onCreated, esAdmin }) {
     setError(""); setLoading(true);
     const { error: err } = await supabase.from("tipos_producto").insert({
       nombre: nombre.trim(), descripcion: descripcion.trim() || null,
-      icono: "package", es_predeterminado: false,
+      icono: contieneEmoji(nombre.trim()) ? null : "package", es_predeterminado: false,
     });
     if (err) { setError(err.message); setLoading(false); return; }
     if (esAdmin) { onCreated(); return; }
