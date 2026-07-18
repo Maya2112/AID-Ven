@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF, cargarImagenComoDataURL } from "@/lib/pdf";
+import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF, cargarImagenComoDataURL, limpiarFilasPDF } from "@/lib/pdf";
 import { NAVY_RGB } from "@/lib/constants";
 
 export default function ManifiestoView({ centro, esAdmin }) {
@@ -97,6 +97,42 @@ export default function ManifiestoView({ centro, esAdmin }) {
         cargarJsPDF(),
         (alcance === "centro" && centro.logo_url) ? cargarImagenComoDataURL(centro.logo_url) : Promise.resolve(null),
       ]);
+
+      const incluyeCentro = alcance === "global";
+      let headers, body, footRow;
+
+      if (modo === "estimado") {
+        headers = [...(incluyeCentro?["Centro"]:[]),"Tipo","Categoría","Producto","Unidad","Cantidad","Peso (kg)","Vol (m³)"];
+        body = incluidos.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.unidad,d.cantidad_total,parseFloat(d.peso_total_kg||0).toFixed(2),parseFloat(d.volumen_total_m3||0).toFixed(4)]);
+        footRow = [...(incluyeCentro?[""]:[]), "", "TOTALES", "", "", "", totalPeso.toFixed(2), totalVol.toFixed(4)];
+      } else {
+        // Igual formato que "Detallado por Caja" del Resumen: cada caja incluida como fila
+        // encabezado (resaltada, con su peso) seguida de sus productos, en vez de una sola
+        // fila resumen por caja — así el manifiesto muestra qué hay adentro de cada una.
+        const cajaIds = incluidos.map(d => d.id);
+        const { data: items, error: errItems } = cajaIds.length
+          ? await supabase.from("donaciones").select("*").in("caja_id", cajaIds)
+          : { data: [], error: null };
+        if (errItems) {
+          alert("No se pudo generar el PDF: " + errItems.message);
+          setExportandoPDF(false);
+          return;
+        }
+        const porCaja = {};
+        (items||[]).forEach(it => { (porCaja[it.caja_id] ??= []).push(it); });
+
+        headers = [...(incluyeCentro?["Centro"]:[]),"Caja","Producto","Cant.","Unidad","Peso (kg)"];
+        body = [];
+        incluidos.forEach(c => {
+          const etiqueta = c.numero_caja ? `CAJA ${c.numero_caja}` : "CAJA (sin número)";
+          body.push([...(incluyeCentro?[c.centro_nombre]:[]), etiqueta, "", "", "", parseFloat(c.peso_kg||0).toFixed(2)]);
+          (porCaja[c.id]||[]).forEach(it => {
+            body.push([...(incluyeCentro?[""]:[]), "", it.nombre_producto, it.cantidad_total?.toLocaleString()||"", it.unidad||"", parseFloat(it.peso_total_kg||0).toFixed(2)]);
+          });
+        });
+        footRow = [...(incluyeCentro?[""]:[]), "", "TOTALES", "", "", totalPeso.toFixed(2)];
+      }
+
       const doc = new jsPDF({ orientation: "landscape" });
       let y = dibujarEncabezadoPDF(doc, {
         titulo: "Manifiesto de Carga",
@@ -105,27 +141,28 @@ export default function ManifiestoView({ centro, esAdmin }) {
         logoDataUrl,
       });
       y = dibujarStatsPDF(doc, y, [
-        { label: "Líneas", value: incluidos.length, color: [37,99,235] },
+        { label: modo==="real"?"Cajas":"Líneas", value: incluidos.length, color: [37,99,235] },
         { label: modo==="real"?"Peso real (kg)":"Peso bruto (kg)", value: totalPeso.toFixed(2), color: [217,119,6] },
         { label: "Volumen (m³)", value: totalVol.toFixed(4), color: [15,31,61] },
       ]);
 
-      const incluyeCentro = alcance === "global";
-      let headers, rows;
-      if (modo === "estimado") {
-        headers = [...(incluyeCentro?["Centro"]:[]),"Tipo","Categoría","Producto","Unidad","Cantidad","Peso (kg)","Vol (m³)"];
-        rows = incluidos.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.tipo_nombre,d.categoria_nombre,d.nombre_producto,d.unidad,d.cantidad_total,parseFloat(d.peso_total_kg||0).toFixed(2),parseFloat(d.volumen_total_m3||0).toFixed(4)]);
-      } else {
-        headers = [...(incluyeCentro?["Centro"]:[]),"Caja","Tipo","Categoría","Contenido","Peso (kg)","Vol (m³)"];
-        rows = incluidos.map(d=>[...(incluyeCentro?[d.centro_nombre]:[]),d.numero_caja||"—",d.tipo_nombre,d.categoria_nombre,d.contenido_resumen||"—",parseFloat(d.peso_kg||0).toFixed(2),d.volumen_m3?parseFloat(d.volumen_m3).toFixed(4):"—"]);
-      }
+      const colProducto = incluyeCentro ? 2 : 1; // índice de la columna "Producto" en modo real, para detectar filas-encabezado de caja
       doc.autoTable({
-        startY: y, head: [headers], body: rows,
+        startY: y, head: [headers], body: limpiarFilasPDF(body),
         theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8 },
         bodyStyles: { fontSize: 7.5 }, alternateRowStyles: { fillColor: [248,250,252] },
         margin: { left: 14, right: 14 },
-        foot: [[...(incluyeCentro?[""]:[]), ...(modo==="estimado"?["","TOTALES","",""]:["","TOTALES",""]), totalPeso.toFixed(2), totalVol.toFixed(4)]],
+        foot: [footRow],
         footStyles: { fillColor: [220,230,241], textColor: NAVY_RGB, fontStyle: "bold", fontSize: 8 },
+        ...(modo === "real" ? {
+          didParseCell: (d) => {
+            if (d.section === "body" && d.row.raw[colProducto] === "") {
+              d.cell.styles.fillColor = [220,230,241];
+              d.cell.styles.textColor = NAVY_RGB;
+              d.cell.styles.fontStyle = "bold";
+            }
+          },
+        } : {}),
       });
       dibujarPiePDF(doc, "AcopioVen · Declaración de mercancía: ayuda humanitaria sin fines de lucro");
       doc.save(`manifiesto_${modo}_${nombreArchivo}.pdf`);

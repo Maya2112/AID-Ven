@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Ico from "@/components/ui/Ico";
 import EstadoBadge from "@/components/ui/EstadoBadge";
-import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsGrandesPDF, dibujarPiePDF, cargarImagenComoDataURL } from "@/lib/pdf";
+import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsGrandesPDF, dibujarPiePDF, cargarImagenComoDataURL, limpiarFilasPDF } from "@/lib/pdf";
 import { NAVY_RGB } from "@/lib/constants";
 
 export default function ResumenCentroView({ centro, tipos }) {
@@ -85,7 +85,7 @@ export default function ResumenCentroView({ centro, tipos }) {
         .sort((a,b) => b.peso - a.peso);
       doc.autoTable({
         startY: y, head: [["Qué es","Peso"]],
-        body: pesoPorTipo.map(t => [t.nombre, `${t.peso.toLocaleString(undefined,{maximumFractionDigits:0})} kg`]),
+        body: limpiarFilasPDF(pesoPorTipo.map(t => [t.nombre, `${t.peso.toLocaleString(undefined,{maximumFractionDigits:0})} kg`])),
         theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
         bodyStyles: { fontSize: 8.5 }, alternateRowStyles: { fillColor: [248,250,252] },
         columnStyles: { 1: { halign: "right" } },
@@ -131,7 +131,7 @@ export default function ResumenCentroView({ centro, tipos }) {
         : [["Tipo","Categoría","Cajas","Peso (kg)","Volumen (m³)","Listas p/envío"]];
 
       doc.autoTable({
-        startY: y2, head: headers, body: rows,
+        startY: y2, head: headers, body: limpiarFilasPDF(rows),
         theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
         bodyStyles: { fontSize: 8.5 }, alternateRowStyles: { fillColor: [248,250,252] },
         margin: { left: 14, right: 14 },
@@ -198,7 +198,7 @@ export default function ResumenCentroView({ centro, tipos }) {
         logoDataUrl,
       });
       doc.autoTable({
-        startY: y, head: [["Caja","Producto","Cant.","Unidad","Peso (kg)"]], body,
+        startY: y, head: [["Caja","Producto","Cant.","Unidad","Peso (kg)"]], body: limpiarFilasPDF(body),
         theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
         bodyStyles: { fontSize: 8 }, margin: { left: 14, right: 14 },
         didParseCell: (d) => {

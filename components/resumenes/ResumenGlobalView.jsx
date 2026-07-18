@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Ico from "@/components/ui/Ico";
-import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF } from "@/lib/pdf";
+import { cargarJsPDF, dibujarEncabezadoPDF, dibujarStatsPDF, dibujarPiePDF, limpiarFilasPDF } from "@/lib/pdf";
 import { NAVY_RGB } from "@/lib/constants";
 
 export default function ResumenGlobalView() {
@@ -75,7 +75,7 @@ export default function ResumenGlobalView() {
         : [["Tipo","Categoría","Centros","Cajas","Peso (kg)","Listas p/envío"]];
 
       doc.autoTable({
-        startY: y, head: headers, body: rows,
+        startY: y, head: headers, body: limpiarFilasPDF(rows),
         theme: "plain", headStyles: { fillColor: NAVY_RGB, textColor: 255, fontSize: 8.5 },
         bodyStyles: { fontSize: 8.5 }, alternateRowStyles: { fillColor: [248,250,252] },
         margin: { left: 14, right: 14 },
